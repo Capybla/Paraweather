@@ -1,4 +1,4 @@
-Flask==2.2.3
+Flask==2.0.3
+Werkzeug==2.0.3  # Asegúrate de usar una versión compatible
 requests==2.28.1
 geopy==2.2.0
-Werkzeug==2.0.3
