@@ -168,11 +168,14 @@ backend:
     file: "server.py"
     stuck_count: 0
     priority: "medium"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: true
         agent: "main"
         comment: "Mock wind data API ready for real weather service integration"
+      - working: true
+        agent: "testing"
+        comment: "✅ VERIFIED: Wind data API working correctly. GET /api/wind/{lat}/{lng} returns proper wind data structure with realistic values (speed: 2-15 m/s, direction: 0-360°). Coordinates match request parameters. Mock data is suitable for testing and ready for real weather service integration."
 
 frontend:
   - task: "Interactive Leaflet map with UK center"
