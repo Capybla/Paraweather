@@ -257,11 +257,7 @@ metadata:
   run_ui: false
 
 test_plan:
-  current_focus:
-    - "Route planning API (POST /api/routes, GET /api/routes)"
-    - "Airspace API endpoints (GET /api/airspaces, /api/airspace-types)"
-    - "Route sharing functionality"
-    - "Wind data integration"
+  current_focus: []
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
