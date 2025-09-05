@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { MapContainer, TileLayer, Polygon, Marker, Popup, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, Polygon, Marker, Popup, Polyline, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import axios from 'axios';
 import './App.css';
@@ -31,8 +31,182 @@ const getAirspaceColor = (type) => {
   return colors[type] || '#888888';
 };
 
-// Route planning component
-const RoutePlanner = ({ onRouteCreate, isPlanning, setIsPlanning }) => {
+// Get route segment color based on segment type
+const getSegmentColor = (segmentType) => {
+  const colors = {
+    'safe': '#00ff00',      // Green - Safe
+    'caution': '#ffaa00',   // Orange - Caution
+    'avoid': '#ff6600',     // Red-Orange - Avoid
+    'restricted': '#ff0000' // Red - Restricted
+  };
+  return colors[segmentType] || '#888888';
+};
+
+// Airspace preferences component
+const AirspacePreferences = ({ preferences, onPreferencesChange, isOpen, onToggle }) => {
+  const handleChange = (field, value) => {
+    onPreferencesChange({
+      ...preferences,
+      [field]: value
+    });
+  };
+
+  if (!isOpen) {
+    return (
+      <div className="preferences-collapsed">
+        <button onClick={onToggle} className="preferences-toggle">
+          ⚙️ Flight Settings
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="preferences-panel">
+      <div className="preferences-header">
+        <h3>⚙️ Flight Preferences</h3>
+        <button onClick={onToggle} className="preferences-close">×</button>
+      </div>
+      
+      <div className="preferences-content">
+        <div className="preference-section">
+          <h4>Airspace Avoidance</h4>
+          <label>
+            <input
+              type="checkbox"
+              checked={preferences.avoid_ctr}
+              onChange={(e) => handleChange('avoid_ctr', e.target.checked)}
+            />
+            Avoid CTR (Control Zones)
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={preferences.avoid_tma}
+              onChange={(e) => handleChange('avoid_tma', e.target.checked)}
+            />
+            Avoid TMA (Terminal Areas)
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={preferences.avoid_danger}
+              onChange={(e) => handleChange('avoid_danger', e.target.checked)}
+            />
+            Avoid Danger Areas
+          </label>
+        </div>
+
+        <div className="preference-section">
+          <h4>Altitude Settings (meters)</h4>
+          <label>
+            Minimum Altitude:
+            <input
+              type="number"
+              value={preferences.minimum_altitude}
+              onChange={(e) => handleChange('minimum_altitude', parseFloat(e.target.value))}
+              min="50"
+              max="500"
+              step="10"
+            />
+          </label>
+          <label>
+            Preferred Altitude:
+            <input
+              type="number"
+              value={preferences.preferred_altitude}
+              onChange={(e) => handleChange('preferred_altitude', parseFloat(e.target.value))}
+              min="100"
+              max="1500"
+              step="50"
+            />
+          </label>
+          <label>
+            Maximum Altitude:
+            <input
+              type="number"
+              value={preferences.maximum_altitude}
+              onChange={(e) => handleChange('maximum_altitude', parseFloat(e.target.value))}
+              min="500"
+              max="3000"
+              step="50"
+            />
+          </label>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Route segments visualization component
+const RouteSegments = ({ route }) => {
+  if (!route || !route.route_segments || route.route_segments.length === 0) {
+    return null;
+  }
+
+  return (
+    <>
+      {route.route_segments.map((segment, index) => {
+        const positions = [
+          [segment.start.lat, segment.start.lng],
+          [segment.end.lat, segment.end.lng]
+        ];
+
+        return (
+          <Polyline
+            key={index}
+            positions={positions}
+            pathOptions={{
+              color: getSegmentColor(segment.segment_type),
+              weight: 4,
+              opacity: 0.8
+            }}
+          >
+            <Popup>
+              <div className="segment-popup">
+                <h4>Route Segment {index + 1}</h4>
+                <p><strong>Distance:</strong> {segment.distance.toFixed(1)} km</p>
+                <p><strong>Altitude:</strong> {segment.altitude}m AGL</p>
+                <p><strong>Status:</strong> {segment.segment_type.toUpperCase()}</p>
+                {segment.airspace_warnings.length > 0 && (
+                  <div className="segment-warnings">
+                    <strong>Warnings:</strong>
+                    {segment.airspace_warnings.map((warning, idx) => (
+                      <p key={idx} className="warning-text">{warning}</p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </Popup>
+          </Polyline>
+        );
+      })}
+      
+      {/* Altitude annotations */}
+      {route.route_segments.map((segment, index) => {
+        // Calculate midpoint for altitude annotation
+        const midLat = (segment.start.lat + segment.end.lat) / 2;
+        const midLng = (segment.start.lng + segment.end.lng) / 2;
+        
+        return (
+          <Marker
+            key={`alt-${index}`}
+            position={[midLat, midLng]}
+            icon={L.divIcon({
+              className: 'altitude-marker',
+              html: `<div class="altitude-annotation">${segment.altitude}m</div>`,
+              iconSize: [60, 20],
+              iconAnchor: [30, 10]
+            })}
+          />
+        );
+      })}
+    </>
+  );
+};
+
+// Route planning component with enhanced preferences
+const RoutePlanner = ({ onRouteCreate, isPlanning, setIsPlanning, airspacePreferences, onPreferencesChange }) => {
   const [startPoint, setStartPoint] = useState(null);
   const [endPoint, setEndPoint] = useState(null);
   const [routeName, setRouteName] = useState('');
@@ -46,7 +220,8 @@ const RoutePlanner = ({ onRouteCreate, isPlanning, setIsPlanning }) => {
         
         const point = {
           lat: e.latlng.lat,
-          lng: e.latlng.lng
+          lng: e.latlng.lng,
+          altitude: airspacePreferences.preferred_altitude
         };
 
         if (!startPoint) {
@@ -70,7 +245,7 @@ const RoutePlanner = ({ onRouteCreate, isPlanning, setIsPlanning }) => {
         start_point: startPoint,
         end_point: endPoint,
         waypoints: [],
-        wind_consideration: true
+        airspace_preferences: airspacePreferences
       };
 
       const response = await axios.post(`${API}/routes`, routeData);
@@ -101,12 +276,22 @@ const RoutePlanner = ({ onRouteCreate, isPlanning, setIsPlanning }) => {
       <MapClickHandler />
       {startPoint && (
         <Marker position={[startPoint.lat, startPoint.lng]}>
-          <Popup>Start Point</Popup>
+          <Popup>
+            <div>
+              <strong>Start Point</strong>
+              <p>Altitude: {startPoint.altitude}m AGL</p>
+            </div>
+          </Popup>
         </Marker>
       )}
       {endPoint && (
         <Marker position={[endPoint.lat, endPoint.lng]}>
-          <Popup>End Point</Popup>
+          <Popup>
+            <div>
+              <strong>End Point</strong>
+              <p>Altitude: {endPoint.altitude}m AGL</p>
+            </div>
+          </Popup>
         </Marker>
       )}
       
@@ -130,18 +315,25 @@ const RoutePlanner = ({ onRouteCreate, isPlanning, setIsPlanning }) => {
               placeholder="Optional description"
             />
           </div>
+          
           <div className="planning-status">
-            {!startPoint && <p>Click on the map to set start point</p>}
-            {startPoint && !endPoint && <p>Click on the map to set end point</p>}
-            {startPoint && endPoint && <p>Ready to create route!</p>}
+            {!startPoint && <p>📍 Click on map to set start point</p>}
+            {startPoint && !endPoint && <p>🎯 Click on map to set end point</p>}
+            {startPoint && endPoint && (
+              <div>
+                <p>✅ Ready to create route!</p>
+                <p className="altitude-info">Using altitude: {airspacePreferences.preferred_altitude}m</p>
+              </div>
+            )}
           </div>
+          
           <div className="button-group">
             <button 
               onClick={createRoute} 
               disabled={!startPoint || !endPoint || !routeName || loading}
               className="btn-primary"
             >
-              {loading ? 'Creating...' : 'Create Route'}
+              {loading ? 'Creating Route...' : 'Create Route'}
             </button>
             <button onClick={cancelPlanning} className="btn-secondary">
               Cancel
@@ -153,7 +345,7 @@ const RoutePlanner = ({ onRouteCreate, isPlanning, setIsPlanning }) => {
   );
 };
 
-// Route display component
+// Enhanced route display component
 const RouteDisplay = ({ routes, selectedRoute, onRouteSelect }) => {
   const shareRoute = async (routeId) => {
     try {
@@ -177,16 +369,51 @@ const RouteDisplay = ({ routes, selectedRoute, onRouteSelect }) => {
           onClick={() => onRouteSelect(route)}
         >
           <h4>{route.name}</h4>
-          <p>Distance: {route.total_distance?.toFixed(1)} km</p>
-          <p>Est. Time: {route.estimated_time?.toFixed(1)} hours</p>
-          {route.airspace_warnings.length > 0 && (
-            <div className="warnings">
-              <strong>⚠️ Airspace Warnings:</strong>
-              {route.airspace_warnings.map((warning, idx) => (
-                <p key={idx} className="warning">{warning}</p>
+          <div className="route-stats">
+            <p>📏 Distance: {route.total_distance?.toFixed(1)} km</p>
+            <p>⏱️ Est. Time: {route.estimated_time?.toFixed(1)} hours</p>
+            <p>✈️ Segments: {route.route_segments?.length || 0}</p>
+          </div>
+          
+          {/* Flight warnings */}
+          {route.flight_warnings && route.flight_warnings.length > 0 && (
+            <div className="flight-warnings">
+              {route.flight_warnings.map((warning, idx) => (
+                <p key={idx} className="flight-warning">{warning}</p>
               ))}
             </div>
           )}
+          
+          {/* Airspace warnings */}
+          {route.airspace_warnings && route.airspace_warnings.length > 0 && (
+            <div className="warnings">
+              <strong>⚠️ Airspace Warnings:</strong>
+              {route.airspace_warnings.slice(0, 3).map((warning, idx) => (
+                <p key={idx} className="warning">{warning}</p>
+              ))}
+              {route.airspace_warnings.length > 3 && (
+                <p className="warning">... and {route.airspace_warnings.length - 3} more</p>
+              )}
+            </div>
+          )}
+          
+          {/* Route segment summary */}
+          {route.route_segments && route.route_segments.length > 0 && (
+            <div className="segment-summary">
+              <strong>Route Status:</strong>
+              <div className="segment-indicators">
+                {route.route_segments.map((segment, idx) => (
+                  <span 
+                    key={idx}
+                    className="segment-indicator"
+                    style={{ backgroundColor: getSegmentColor(segment.segment_type) }}
+                    title={`Segment ${idx + 1}: ${segment.segment_type} (${segment.altitude}m)`}
+                  ></span>
+                ))}
+              </div>
+            </div>
+          )}
+          
           <button 
             onClick={(e) => {
               e.stopPropagation();
@@ -194,7 +421,7 @@ const RouteDisplay = ({ routes, selectedRoute, onRouteSelect }) => {
             }}
             className="share-btn"
           >
-            Share Route
+            📤 Share Route
           </button>
         </div>
       ))}
@@ -213,6 +440,17 @@ const App = () => {
   const [loading, setLoading] = useState(true);
   const [mapCenter] = useState([52.5, -1.5]); // UK center
   const [showSidebar, setShowSidebar] = useState(true);
+  const [preferencesOpen, setPreferencesOpen] = useState(false);
+  const [airspacePreferences, setAirspacePreferences] = useState({
+    avoid_ctr: true,
+    avoid_tma: true,
+    avoid_restricted: true,
+    avoid_prohibited: true,
+    avoid_danger: true,
+    minimum_altitude: 150,
+    maximum_altitude: 1500,
+    preferred_altitude: 300
+  });
 
   useEffect(() => {
     loadInitialData();
@@ -262,7 +500,7 @@ const App = () => {
     return (
       <div className="loading-screen">
         <div className="spinner"></div>
-        <p>Loading Paramotorist Flight Planner...</p>
+        <p>Loading Advanced Paramotorist Flight Planner...</p>
       </div>
     );
   }
@@ -270,7 +508,7 @@ const App = () => {
   return (
     <div className="app">
       <header className="app-header">
-        <h1>🪂 Paramotorist Flight Planner</h1>
+        <h1>🪂 Advanced Paramotorist Flight Planner</h1>
         <div className="header-controls">
           <button 
             onClick={() => setShowSidebar(!showSidebar)}
@@ -290,6 +528,13 @@ const App = () => {
       <div className="app-content">
         {showSidebar && (
           <div className="sidebar">
+            <AirspacePreferences
+              preferences={airspacePreferences}
+              onPreferencesChange={setAirspacePreferences}
+              isOpen={preferencesOpen}
+              onToggle={() => setPreferencesOpen(!preferencesOpen)}
+            />
+            
             <div className="airspace-controls">
               <h3>Airspace Filters</h3>
               <div className="airspace-types">
@@ -305,6 +550,7 @@ const App = () => {
                       style={{ backgroundColor: getAirspaceColor(type.code) }}
                     ></span>
                     {type.code} - {type.name}
+                    {!type.avoidable && <span className="unavoidable">⚠️</span>}
                   </label>
                 ))}
               </div>
@@ -348,37 +594,46 @@ const App = () => {
                 }}
               >
                 <Popup>
-                  <div>
+                  <div className="airspace-popup">
                     <h4>{airspace.name}</h4>
                     <p><strong>Type:</strong> {airspace.type}</p>
                     {airspace.floor && <p><strong>Floor:</strong> {airspace.floor}</p>}
                     {airspace.ceiling && <p><strong>Ceiling:</strong> {airspace.ceiling}</p>}
                     {airspace.frequency && <p><strong>Frequency:</strong> {airspace.frequency}</p>}
+                    {airspace.requirements && airspace.requirements.length > 0 && (
+                      <div className="requirements">
+                        <strong>Requirements:</strong>
+                        {airspace.requirements.map((req, idx) => (
+                          <p key={idx} className="requirement">{req}</p>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </Popup>
               </Polygon>
             ))}
 
-            {/* Render selected route */}
-            {selectedRoute && (
-              <>
-                <Marker position={[selectedRoute.start_point.lat, selectedRoute.start_point.lng]}>
-                  <Popup>
-                    <strong>Start:</strong> {selectedRoute.name}
-                  </Popup>
-                </Marker>
-                <Marker position={[selectedRoute.end_point.lat, selectedRoute.end_point.lng]}>
-                  <Popup>
-                    <strong>End:</strong> {selectedRoute.name}
-                  </Popup>
-                </Marker>
-              </>
-            )}
+            {/* Render selected route with segments */}
+            {selectedRoute && <RouteSegments route={selectedRoute} />}
+
+            {/* Render route waypoints */}
+            {selectedRoute && selectedRoute.waypoints && selectedRoute.waypoints.map((waypoint, index) => (
+              <Marker key={`waypoint-${index}`} position={[waypoint.lat, waypoint.lng]}>
+                <Popup>
+                  <div>
+                    <strong>{waypoint.waypoint_name || `Waypoint ${index + 1}`}</strong>
+                    {waypoint.altitude && <p>Altitude: {waypoint.altitude}m AGL</p>}
+                  </div>
+                </Popup>
+              </Marker>
+            ))}
 
             <RoutePlanner 
               onRouteCreate={handleRouteCreate}
               isPlanning={isPlanning}
               setIsPlanning={setIsPlanning}
+              airspacePreferences={airspacePreferences}
+              onPreferencesChange={setAirspacePreferences}
             />
           </MapContainer>
         </div>

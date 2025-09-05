@@ -87,13 +87,104 @@ body {
 
 /* Sidebar Styles */
 .sidebar {
-  width: 350px;
+  width: 380px;
   background: white;
   border-right: 1px solid #ddd;
   display: flex;
   flex-direction: column;
   box-shadow: 2px 0 10px rgba(0,0,0,0.1);
   z-index: 999;
+  overflow-y: auto;
+}
+
+/* Airspace Preferences Styles */
+.preferences-collapsed {
+  padding: 1rem;
+  border-bottom: 1px solid #eee;
+}
+
+.preferences-toggle {
+  background: #007bff;
+  border: none;
+  color: white;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  width: 100%;
+  font-weight: 500;
+  transition: background-color 0.3s ease;
+}
+
+.preferences-toggle:hover {
+  background: #0056b3;
+}
+
+.preferences-panel {
+  border-bottom: 1px solid #eee;
+  background: #f8f9fa;
+}
+
+.preferences-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  background: #e9ecef;
+  border-bottom: 1px solid #ddd;
+}
+
+.preferences-header h3 {
+  margin: 0;
+  color: #2c3e50;
+  font-size: 1.1rem;
+}
+
+.preferences-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: #6c757d;
+  padding: 0;
+}
+
+.preferences-close:hover {
+  color: #dc3545;
+}
+
+.preferences-content {
+  padding: 1rem;
+}
+
+.preference-section {
+  margin-bottom: 1.5rem;
+}
+
+.preference-section h4 {
+  color: #2c3e50;
+  margin-bottom: 0.75rem;
+  font-size: 1rem;
+}
+
+.preference-section label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.preference-section input[type="checkbox"] {
+  margin: 0;
+}
+
+.preference-section input[type="number"] {
+  width: 80px;
+  padding: 0.25rem;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  margin-left: 0.5rem;
 }
 
 .airspace-controls {
@@ -111,7 +202,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  max-height: 300px;
+  max-height: 250px;
   overflow-y: auto;
 }
 
@@ -136,6 +227,11 @@ body {
   border: 1px solid #ccc;
 }
 
+.unavoidable {
+  margin-left: auto;
+  font-size: 0.8rem;
+}
+
 .clear-filters-btn {
   background: #6c757d;
   border: none;
@@ -152,7 +248,7 @@ body {
   background: #5a6268;
 }
 
-/* Route List Styles */
+/* Enhanced Route List Styles */
 .route-list {
   flex: 1;
   padding: 1.5rem;
@@ -188,28 +284,74 @@ body {
 
 .route-item h4 {
   color: #2c3e50;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.75rem;
   font-size: 1.1rem;
 }
 
-.route-item p {
-  margin: 0.25rem 0;
-  color: #666;
-  font-size: 0.9rem;
+.route-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
 }
 
-.warnings {
-  margin-top: 0.75rem;
-  padding: 0.75rem;
+.route-stats p {
+  margin: 0;
+  color: #666;
+  font-size: 0.85rem;
+}
+
+.flight-warnings {
+  margin: 0.75rem 0;
+  padding: 0.5rem;
   background: #fff3cd;
   border: 1px solid #ffeaa7;
   border-radius: 4px;
 }
 
-.warning {
+.flight-warning {
   color: #856404 !important;
   font-size: 0.8rem !important;
   margin: 0.25rem 0 !important;
+  font-weight: 500;
+}
+
+.warnings {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  background: #f8d7da;
+  border: 1px solid #f5c6cb;
+  border-radius: 4px;
+}
+
+.warning {
+  color: #721c24 !important;
+  font-size: 0.8rem !important;
+  margin: 0.25rem 0 !important;
+}
+
+.segment-summary {
+  margin: 0.75rem 0;
+}
+
+.segment-summary strong {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-size: 0.9rem;
+  color: #2c3e50;
+}
+
+.segment-indicators {
+  display: flex;
+  gap: 2px;
+  flex-wrap: wrap;
+}
+
+.segment-indicator {
+  width: 20px;
+  height: 8px;
+  border-radius: 2px;
+  display: inline-block;
 }
 
 .share-btn {
@@ -219,9 +361,10 @@ body {
   padding: 0.5rem 1rem;
   border-radius: 4px;
   cursor: pointer;
-  margin-top: 0.75rem;
+  margin-top: 1rem;
   font-size: 0.85rem;
   transition: background-color 0.3s ease;
+  width: 100%;
 }
 
 .share-btn:hover {
@@ -240,7 +383,7 @@ body {
   z-index: 1;
 }
 
-/* Route Planner Panel */
+/* Enhanced Route Planner Panel */
 .route-planner-panel {
   position: absolute;
   top: 20px;
@@ -250,7 +393,7 @@ body {
   border-radius: 8px;
   box-shadow: 0 4px 20px rgba(0,0,0,0.15);
   z-index: 1000;
-  min-width: 300px;
+  min-width: 320px;
   max-width: 400px;
 }
 
@@ -297,6 +440,12 @@ body {
   font-weight: 500;
 }
 
+.altitude-info {
+  font-size: 0.9rem;
+  color: #666;
+  margin-top: 0.5rem;
+}
+
 .button-group {
   display: flex;
   gap: 0.75rem;
@@ -340,6 +489,63 @@ body {
   background: #5a6268;
 }
 
+/* Altitude Marker Styles  */
+.altitude-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
+.altitude-annotation {
+  background: rgba(0, 123, 255, 0.9);
+  color: white;
+  padding: 2px 6px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: bold;
+  white-space: nowrap;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+/* Enhanced Popup Styles */
+.airspace-popup h4,
+.segment-popup h4 {
+  margin: 0 0 0.5rem 0;
+  color: #2c3e50;
+  font-size: 1rem;
+}
+
+.airspace-popup p,
+.segment-popup p {
+  margin: 0.25rem 0;
+  font-size: 0.9rem;
+}
+
+.requirements {
+  margin-top: 0.75rem;
+  padding: 0.5rem;
+  background: #fff3cd;
+  border-radius: 4px;
+}
+
+.requirement {
+  color: #856404 !important;
+  font-size: 0.8rem !important;
+  margin: 0.25rem 0 !important;
+}
+
+.segment-warnings {
+  margin-top: 0.75rem;
+  padding: 0.5rem;
+  background: #f8d7da;
+  border-radius: 4px;
+}
+
+.warning-text {
+  color: #721c24 !important;
+  font-size: 0.8rem !important;
+  margin: 0.25rem 0 !important;
+}
+
 /* Loading Screen */
 .loading-screen {
   display: flex;
@@ -377,7 +583,7 @@ body {
   }
   
   .sidebar {
-    width: 300px;
+    width: 320px;
   }
   
   .route-planner-panel {
@@ -401,7 +607,7 @@ body {
 
 @media (max-width: 480px) {
   .sidebar {
-    width: 250px;
+    width: 280px;
   }
   
   .app-header h1 {
@@ -412,17 +618,10 @@ body {
   .route-list {
     padding: 1rem;
   }
-}
-
-/* Leaflet Custom Styles */
-.leaflet-popup-content h4 {
-  margin: 0 0 0.5rem 0;
-  color: #2c3e50;
-}
-
-.leaflet-popup-content p {
-  margin: 0.25rem 0;
-  font-size: 0.9rem;
+  
+  .route-stats {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* Animation for route creation */
@@ -441,3 +640,14 @@ body {
 .planning-status {
   animation: pulse 2s infinite;
 }
+
+/* Polyline styles for different segment types */
+.leaflet-interactive {
+  cursor: pointer;
+}
+
+/* Enhanced color coding for route segments */
+.safe-segment { color: #00ff00; }
+.caution-segment { color: #ffaa00; }
+.avoid-segment { color: #ff6600; }
+.restricted-segment { color: #ff0000; }
