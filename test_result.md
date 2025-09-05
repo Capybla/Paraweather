@@ -138,11 +138,14 @@ backend:
     file: "server.py"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: true
         agent: "main"
         comment: "Route creation with distance calculation and airspace conflict detection working"
+      - working: true
+        agent: "testing"
+        comment: "✅ VERIFIED: All route endpoints working perfectly. POST /api/routes creates routes with accurate distance calculation (Bristol-Bath ~18.1km), proper time estimation (0.36h at 50km/h paramotor speed), and airspace conflict detection. GET /api/routes lists all routes correctly. GET /api/routes/{id} retrieves specific routes. Airspace warnings properly generated for routes near prohibited zones."
 
   - task: "Route sharing functionality (POST /api/routes/{id}/share, GET /api/shared/{token})"
     implemented: true
