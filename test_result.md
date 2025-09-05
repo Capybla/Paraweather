@@ -123,11 +123,14 @@ backend:
     file: "server.py"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: true
         agent: "main"
         comment: "API endpoints returning proper JSON with airspace data and types"
+      - working: true
+        agent: "testing"
+        comment: "✅ VERIFIED: Both endpoints working correctly. /api/airspaces returns 3 UK airspaces (Bristol TMA, London Prohibited Zone, Manchester CTR) with proper OpenAir parsing. /api/airspace-types returns 10 airspace types with correct structure. Airspace filtering by type also tested and working."
 
   - task: "Route planning API (POST /api/routes, GET /api/routes)"
     implemented: true
