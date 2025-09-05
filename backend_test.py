@@ -411,13 +411,13 @@ class ParametoristAPITester:
                 "name": "London Area Test Route",
                 "description": "Route to test airspace conflict detection",
                 "start_point": {
-                    "lat": 51.28,  # Near London Prohibited Zone
-                    "lng": -0.27,
+                    "lat": 51.47,  # Very close to London Prohibited Zone center
+                    "lng": -0.45,
                     "elevation": 100
                 },
                 "end_point": {
-                    "lat": 51.32,
-                    "lng": -0.20,
+                    "lat": 51.48,
+                    "lng": -0.44,
                     "elevation": 100
                 },
                 "waypoints": [],
