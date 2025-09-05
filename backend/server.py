@@ -50,6 +50,7 @@ class Airspace(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str
     type: str  # CTR, TMA, R, P, D, etc.
+    country: str  # Country code (ES, FR, DE, IT, etc.)
     coordinates: List[Coordinate]
     floor: Optional[str] = None
     ceiling: Optional[str] = None
@@ -201,6 +202,8 @@ def parse_openair_airspace(openair_content: str) -> List[Dict]:
             current_airspace['ceiling'] = line[3:].strip()
         elif line.startswith('AF '):  # Frequency
             current_airspace['frequency'] = line[3:].strip()
+        elif line.startswith('AC0 '):  # Country code (custom extension)
+            current_airspace['country'] = line[4:].strip()
         elif line.startswith('DP '):  # Point definition
             # Parse coordinates like "DP 52:18:00 N 004:45:00 E"
             coord_match = re.search(r'(\d+):(\d+):(\d+)\s*([NS])\s*(\d+):(\d+):(\d+)\s*([EW])', line)
@@ -342,6 +345,7 @@ def calculate_route_segments(route_points: List[RoutePoint], airspaces: List[Dic
                 if point_in_polygon((sample_lat, sample_lng), airspace.get('coordinates', [])):
                     airspace_type = airspace.get('type', 'Unknown')
                     airspace_name = airspace.get('name', 'Unknown airspace')
+                    country = airspace.get('country', 'EU')
                     
                     # Check if we can fly above/below this airspace
                     floor = airspace.get('floor_meters', 0)
@@ -349,26 +353,27 @@ def calculate_route_segments(route_points: List[RoutePoint], airspaces: List[Dic
                     
                     if airspace_type in ['R', 'P']:
                         segment_type = "restricted"
-                        segment_warnings.append(f"PROHIBITED: {airspace_name} - Entry forbidden")
+                        segment_warnings.append(f"PROHIBITED: {airspace_name} ({country}) - Entry forbidden")
                     elif airspace_type in ['CTR', 'TMA'] and (preferences.avoid_ctr or preferences.avoid_tma):
                         if segment_altitude > floor and segment_altitude < ceiling:
                             # Try to fly above
                             if ceiling < preferences.maximum_altitude:
                                 segment_altitude = ceiling + 50  # 50m above
                                 segment_type = "caution"
-                                segment_warnings.append(f"ALTITUDE ADJUSTED: Flying at {segment_altitude}m to clear {airspace_name}")
+                                segment_warnings.append(f"ALTITUDE ADJUSTED: Flying at {segment_altitude}m to clear {airspace_name} ({country})")
                             else:
                                 segment_type = "avoid"
-                                segment_warnings.append(f"WARNING: Cannot clear {airspace_name} at safe altitude")
+                                segment_warnings.append(f"WARNING: Cannot clear {airspace_name} ({country}) at safe altitude")
                     elif airspace_type == 'D':
                         segment_type = "caution"
-                        segment_warnings.append(f"DANGER AREA: {airspace_name} - Monitor NOTAMs")
+                        segment_warnings.append(f"DANGER AREA: {airspace_name} ({country}) - Monitor NOTAMs")
                     
                     # Add requirements
                     requirements = get_airspace_requirements(airspace_type)
                     for req in requirements:
-                        if req not in segment_warnings:
-                            segment_warnings.append(f"{airspace_name}: {req}")
+                        warning = f"{airspace_name} ({country}): {req}"
+                        if warning not in segment_warnings:
+                            segment_warnings.append(warning)
         
         # Create segment
         segment = RouteSegment(
@@ -397,32 +402,238 @@ async def get_wind_data(lat: float, lng: float, altitude: float = 1000) -> WindD
     )
 
 
-# Sample OpenAir data for demonstration with enhanced data
-SAMPLE_OPENAIR_DATA = """
-* Enhanced airspace data for paramotoring with altitude information
-AC R
-AN Bristol TMA
-AL SFC
-AH FL195
-AF 118.850
-DP 51:23:00 N 002:35:00 W
-DP 51:30:00 N 002:25:00 W
-DP 51:25:00 N 002:15:00 W
-DP 51:18:00 N 002:20:00 W
-DP 51:23:00 N 002:35:00 W
+# Comprehensive European Airspace Data
+EUROPEAN_AIRSPACE_DATA = """
+* Comprehensive European Airspace Data for Paramotoring
+* Covers major airspace zones across Spain, France, Germany, Italy, and other European countries
 
-AC P
-AN London Prohibited Zone
+* === SPAIN ===
+AC CTR
+AN Madrid-Barajas CTR
+AC0 ES
 AL SFC
-AH 2500FT
-DP 51:28:00 N 000:27:00 W
-DP 51:32:00 N 000:20:00 W
-DP 51:30:00 N 000:15:00 W
-DP 51:26:00 N 000:22:00 W
-DP 51:28:00 N 000:27:00 W
+AH 4000FT
+AF 118.200
+DP 40:30:00 N 003:34:00 W
+DP 40:35:00 N 003:30:00 W
+DP 40:32:00 N 003:25:00 W
+DP 40:27:00 N 003:29:00 W
+DP 40:30:00 N 003:34:00 W
+
+AC TMA
+AN Madrid TMA
+AC0 ES
+AL 4000FT
+AH FL245
+AF 119.200
+DP 40:15:00 N 003:50:00 W
+DP 40:45:00 N 003:15:00 W
+DP 40:40:00 N 002:55:00 W
+DP 40:10:00 N 003:30:00 W
+DP 40:15:00 N 003:50:00 W
 
 AC CTR
+AN Barcelona CTR
+AC0 ES
+AL SFC
+AH 3500FT
+AF 118.300
+DP 41:17:00 N 002:04:00 E
+DP 41:22:00 N 002:10:00 E
+DP 41:19:00 N 002:15:00 E
+DP 41:14:00 N 002:09:00 E
+DP 41:17:00 N 002:04:00 E
+
+AC R
+AN LEI R-44 Zaragoza
+AC0 ES
+AL SFC
+AH FL195
+DP 41:40:00 N 000:50:00 W
+DP 41:45:00 N 000:45:00 W
+DP 41:42:00 N 000:40:00 W
+DP 41:37:00 N 000:45:00 W
+DP 41:40:00 N 000:50:00 W
+
+AC D
+AN LEI D-21 Valencia
+AC0 ES
+AL SFC
+AH 8000FT
+DP 39:25:00 N 000:15:00 W
+DP 39:30:00 N 000:10:00 W
+DP 39:27:00 N 000:05:00 W
+DP 39:22:00 N 000:10:00 W
+DP 39:25:00 N 000:15:00 W
+
+AC P
+AN Palma Prohibited Zone
+AC0 ES
+AL SFC
+AH 2500FT
+DP 39:33:00 N 002:37:00 E
+DP 39:37:00 N 002:42:00 E
+DP 39:35:00 N 002:47:00 E
+DP 39:31:00 N 002:42:00 E
+DP 39:33:00 N 002:37:00 E
+
+* === FRANCE ===
+AC CTR
+AN Paris-Charles de Gaulle CTR
+AC0 FR
+AL SFC
+AH 4000FT
+AF 118.150
+DP 49:00:00 N 002:30:00 E
+DP 49:05:00 N 002:35:00 E
+DP 49:02:00 N 002:40:00 E
+DP 48:57:00 N 002:35:00 E
+DP 49:00:00 N 002:30:00 E
+
+AC TMA
+AN Paris TMA
+AC0 FR
+AL 1500FT
+AH FL195
+AF 119.050
+DP 48:40:00 N 002:00:00 E
+DP 49:20:00 N 002:50:00 E
+DP 49:10:00 N 003:10:00 E
+DP 48:30:00 N 002:20:00 E
+DP 48:40:00 N 002:00:00 E
+
+AC CTR
+AN Nice Côte d'Azur CTR
+AC0 FR
+AL SFC
+AH 3000FT
+AF 118.700
+DP 43:39:00 N 007:12:00 E
+DP 43:42:00 N 007:15:00 E
+DP 43:40:00 N 007:18:00 E
+DP 43:37:00 N 007:15:00 E
+DP 43:39:00 N 007:12:00 E
+
+AC R
+AN LF R-43 Mont-de-Marsan
+AC0 FR
+AL SFC
+AH FL195
+DP 43:52:00 N 000:28:00 W
+DP 43:57:00 N 000:23:00 W
+DP 43:54:00 N 000:18:00 W
+DP 43:49:00 N 000:23:00 W
+DP 43:52:00 N 000:28:00 W
+
+AC D
+AN LF D-17 Marseille
+AC0 FR
+AL SFC
+AH 6500FT
+DP 43:15:00 N 005:10:00 E
+DP 43:20:00 N 005:15:00 E
+DP 43:17:00 N 005:20:00 E
+DP 43:12:00 N 005:15:00 E
+DP 43:15:00 N 005:10:00 E
+
+* === GERMANY ===
+AC CTR
+AN Frankfurt CTR
+AC0 DE
+AL SFC
+AH 4000FT
+AF 118.500
+DP 50:01:00 N 008:31:00 E
+DP 50:06:00 N 008:36:00 E
+DP 50:03:00 N 008:41:00 E
+DP 49:58:00 N 008:36:00 E
+DP 50:01:00 N 008:31:00 E
+
+AC TMA
+AN Munich TMA
+AC0 DE
+AL 1500FT
+AH FL245
+AF 120.050
+DP 48:00:00 N 011:20:00 E
+DP 48:25:00 N 011:50:00 E
+DP 48:20:00 N 012:10:00 E
+DP 47:55:00 N 011:40:00 E
+DP 48:00:00 N 011:20:00 E
+
+AC R
+AN ED R-138 Grafenwöhr
+AC0 DE
+AL SFC
+AH FL195
+DP 49:40:00 N 011:50:00 E
+DP 49:45:00 N 011:55:00 E
+DP 49:42:00 N 012:00:00 E
+DP 49:37:00 N 011:55:00 E
+DP 49:40:00 N 011:50:00 E
+
+AC D
+AN ED D-40 Hamburg
+AC0 DE
+AL SFC
+AH 7500FT
+DP 53:35:00 N 009:50:00 E
+DP 53:40:00 N 009:55:00 E
+DP 53:37:00 N 010:00:00 E
+DP 53:32:00 N 009:55:00 E
+DP 53:35:00 N 009:50:00 E
+
+* === ITALY ===
+AC CTR
+AN Roma Fiumicino CTR
+AC0 IT
+AL SFC
+AH 3500FT
+AF 118.750
+DP 41:46:00 N 012:14:00 E
+DP 41:51:00 N 012:19:00 E
+DP 41:48:00 N 012:24:00 E
+DP 41:43:00 N 012:19:00 E
+DP 41:46:00 N 012:14:00 E
+
+AC TMA
+AN Milano TMA
+AC0 IT
+AL 2000FT
+AH FL195
+AF 120.050
+DP 45:25:00 N 008:30:00 E
+DP 45:50:00 N 009:00:00 E
+DP 45:45:00 N 009:20:00 E
+DP 45:20:00 N 008:50:00 E
+DP 45:25:00 N 008:30:00 E
+
+AC R
+AN LI R-18 Sardinia
+AC0 IT
+AL SFC
+AH FL245
+DP 40:15:00 N 009:30:00 E
+DP 40:20:00 N 009:35:00 E
+DP 40:17:00 N 009:40:00 E
+DP 40:12:00 N 009:35:00 E
+DP 40:15:00 N 009:30:00 E
+
+AC D
+AN LI D-47 Naples
+AC0 IT
+AL SFC
+AH 5500FT
+DP 40:50:00 N 014:15:00 E
+DP 40:55:00 N 014:20:00 E
+DP 40:52:00 N 014:25:00 E
+DP 40:47:00 N 014:20:00 E
+DP 40:50:00 N 014:15:00 E
+
+* === UNITED KINGDOM ===
+AC CTR
 AN Manchester CTR
+AC0 GB
 AL SFC
 AH 3500FT
 AF 118.620
@@ -432,49 +643,105 @@ DP 53:23:00 N 002:05:00 W
 DP 53:19:00 N 002:11:00 W
 DP 53:21:00 N 002:16:00 W
 
-AC TMA
-AN Birmingham TMA
-AL 1500FT
-AH FL245
-AF 121.200
-DP 52:28:00 N 001:50:00 W
-DP 52:35:00 N 001:40:00 W
-DP 52:32:00 N 001:30:00 W
-DP 52:25:00 N 001:35:00 W
-DP 52:28:00 N 001:50:00 W
-
-AC D
-AN Danger Area EG D323
+AC P
+AN London Prohibited Zone
+AC0 GB
 AL SFC
-AH 8000FT
-DP 52:10:00 N 002:00:00 W
-DP 52:15:00 N 001:55:00 W
-DP 52:12:00 N 001:50:00 W
-DP 52:07:00 N 001:55:00 W
-DP 52:10:00 N 002:00:00 W
+AH 2500FT
+DP 51:28:00 N 000:27:00 W
+DP 51:32:00 N 000:20:00 W
+DP 51:30:00 N 000:15:00 W
+DP 51:26:00 N 000:22:00 W
+DP 51:28:00 N 000:27:00 W
+
+* === SWITZERLAND ===
+AC CTR
+AN Zurich CTR
+AC0 CH
+AL SFC
+AH 4500FT
+AF 118.100
+DP 47:25:00 N 008:30:00 E
+DP 47:30:00 N 008:35:00 E
+DP 47:27:00 N 008:40:00 E
+DP 47:22:00 N 008:35:00 E
+DP 47:25:00 N 008:30:00 E
+
+AC R
+AN LS R-12 Alpine
+AC0 CH
+AL 6500FT
+AH FL195
+DP 46:30:00 N 007:45:00 E
+DP 46:35:00 N 007:50:00 E
+DP 46:32:00 N 007:55:00 E
+DP 46:27:00 N 007:50:00 E
+DP 46:30:00 N 007:45:00 E
+
+* === AUSTRIA ===
+AC CTR
+AN Vienna CTR
+AC0 AT
+AL SFC
+AH 3500FT
+AF 118.800
+DP 48:06:00 N 016:33:00 E
+DP 48:11:00 N 016:38:00 E
+DP 48:08:00 N 016:43:00 E
+DP 48:03:00 N 016:38:00 E
+DP 48:06:00 N 016:33:00 E
+
+* === NETHERLANDS ===
+AC CTR
+AN Amsterdam Schiphol CTR
+AC0 NL
+AL SFC
+AH 3000FT
+AF 118.400
+DP 52:17:00 N 004:45:00 E
+DP 52:22:00 N 004:50:00 E
+DP 52:19:00 N 004:55:00 E
+DP 52:14:00 N 004:50:00 E
+DP 52:17:00 N 004:45:00 E
+
+* === BELGIUM ===
+AC CTR
+AN Brussels CTR
+AC0 BE
+AL SFC
+AH 2500FT
+AF 118.950
+DP 50:54:00 N 004:29:00 E
+DP 50:59:00 N 004:34:00 E
+DP 50:56:00 N 004:39:00 E
+DP 50:51:00 N 004:34:00 E
+DP 50:54:00 N 004:29:00 E
 """
 
 
 # Routes
 @api_router.get("/")
 async def root():
-    return {"message": "Paramotorist Flight Planning API with Advanced Airspace Avoidance"}
+    return {"message": "European Paramotorist Flight Planning API with Advanced Airspace Avoidance"}
 
 @api_router.get("/airspaces", response_model=List[Airspace])
-async def get_airspaces(type_filter: Optional[str] = None):
-    """Get airspace data, optionally filtered by type"""
+async def get_airspaces(type_filter: Optional[str] = None, country: Optional[str] = None):
+    """Get airspace data, optionally filtered by type and/or country"""
     try:
-        # Parse sample OpenAir data
-        parsed_airspaces = parse_openair_airspace(SAMPLE_OPENAIR_DATA)
+        # Parse European airspace data
+        parsed_airspaces = parse_openair_airspace(EUROPEAN_AIRSPACE_DATA)
         
         airspaces = []
         for airspace_data in parsed_airspaces:
             if type_filter and airspace_data.get('type') != type_filter:
                 continue
+            if country and airspace_data.get('country') != country:
+                continue
                 
             airspace = Airspace(
                 name=airspace_data.get('name', 'Unknown'),
                 type=airspace_data.get('type', 'Unknown'),
+                country=airspace_data.get('country', 'EU'),
                 coordinates=[Coordinate(**coord) for coord in airspace_data.get('coordinates', [])],
                 floor=airspace_data.get('floor'),
                 ceiling=airspace_data.get('ceiling'),
@@ -489,6 +756,23 @@ async def get_airspaces(type_filter: Optional[str] = None):
     except Exception as e:
         logger.error(f"Error getting airspaces: {e}")
         raise HTTPException(status_code=500, detail="Failed to get airspace data")
+
+@api_router.get("/countries")
+async def get_countries():
+    """Get available countries with airspace data"""
+    return {
+        "countries": [
+            {"code": "ES", "name": "Spain", "flag": "🇪🇸"},
+            {"code": "FR", "name": "France", "flag": "🇫🇷"},
+            {"code": "DE", "name": "Germany", "flag": "🇩🇪"},
+            {"code": "IT", "name": "Italy", "flag": "🇮🇹"},
+            {"code": "GB", "name": "United Kingdom", "flag": "🇬🇧"},
+            {"code": "CH", "name": "Switzerland", "flag": "🇨🇭"},
+            {"code": "AT", "name": "Austria", "flag": "🇦🇹"},
+            {"code": "NL", "name": "Netherlands", "flag": "🇳🇱"},
+            {"code": "BE", "name": "Belgium", "flag": "🇧🇪"}
+        ]
+    }
 
 @api_router.get("/airspace-types")
 async def get_airspace_types():
@@ -515,7 +799,7 @@ async def create_route(route_data: RouteCreate):
         preferences = route_data.airspace_preferences or AirspacePreferences()
         
         # Parse airspaces for route planning
-        parsed_airspaces = parse_openair_airspace(SAMPLE_OPENAIR_DATA)
+        parsed_airspaces = parse_openair_airspace(EUROPEAN_AIRSPACE_DATA)
         
         # Calculate avoidance waypoints
         avoidance_waypoints = calculate_avoidance_waypoints(

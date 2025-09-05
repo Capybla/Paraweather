@@ -42,6 +42,34 @@ const getSegmentColor = (segmentType) => {
   return colors[segmentType] || '#888888';
 };
 
+// Country filter component
+const CountryFilter = ({ countries, selectedCountries, onCountryToggle }) => {
+  return (
+    <div className="country-filters">
+      <h4>Countries</h4>
+      <div className="country-list">
+        {countries.map(country => (
+          <label key={country.code} className="country-checkbox">
+            <input
+              type="checkbox"
+              checked={selectedCountries.includes(country.code)}
+              onChange={() => onCountryToggle(country.code)}
+            />
+            <span className="country-flag">{country.flag}</span>
+            {country.name}
+          </label>
+        ))}
+      </div>
+      <button 
+        onClick={() => onCountryToggle('all')}
+        className="select-all-countries-btn"
+      >
+        Show All Countries
+      </button>
+    </div>
+  );
+};
+
 // Airspace preferences component
 const AirspacePreferences = ({ preferences, onPreferencesChange, isOpen, onToggle }) => {
   const handleChange = (field, value) => {
@@ -171,9 +199,12 @@ const RouteSegments = ({ route }) => {
                 {segment.airspace_warnings.length > 0 && (
                   <div className="segment-warnings">
                     <strong>Warnings:</strong>
-                    {segment.airspace_warnings.map((warning, idx) => (
+                    {segment.airspace_warnings.slice(0, 5).map((warning, idx) => (
                       <p key={idx} className="warning-text">{warning}</p>
                     ))}
+                    {segment.airspace_warnings.length > 5 && (
+                      <p className="warning-text">... and {segment.airspace_warnings.length - 5} more warnings</p>
+                    )}
                   </div>
                 )}
               </div>
@@ -433,12 +464,14 @@ const RouteDisplay = ({ routes, selectedRoute, onRouteSelect }) => {
 const App = () => {
   const [airspaces, setAirspaces] = useState([]);
   const [airspaceTypes, setAirspaceTypes] = useState([]);
+  const [countries, setCountries] = useState([]);
   const [selectedAirspaceTypes, setSelectedAirspaceTypes] = useState([]);
+  const [selectedCountries, setSelectedCountries] = useState(['ES', 'FR', 'DE', 'IT']); // Default to major European countries
   const [routes, setRoutes] = useState([]);
   const [selectedRoute, setSelectedRoute] = useState(null);
   const [isPlanning, setIsPlanning] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [mapCenter] = useState([52.5, -1.5]); // UK center
+  const [mapCenter] = useState([46.2276, 2.2137]); // Center of Europe
   const [showSidebar, setShowSidebar] = useState(true);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [airspacePreferences, setAirspacePreferences] = useState({
@@ -456,17 +489,25 @@ const App = () => {
     loadInitialData();
   }, []);
 
+  useEffect(() => {
+    // Reload airspaces when country selection changes
+    loadAirspaces();
+  }, [selectedCountries]);
+
   const loadInitialData = async () => {
     try {
       setLoading(true);
+      
+      // Load countries
+      const countriesResponse = await axios.get(`${API}/countries`);
+      setCountries(countriesResponse.data.countries);
       
       // Load airspace types
       const typesResponse = await axios.get(`${API}/airspace-types`);
       setAirspaceTypes(typesResponse.data.types);
       
-      // Load all airspaces
-      const airspacesResponse = await axios.get(`${API}/airspaces`);
-      setAirspaces(airspacesResponse.data);
+      // Load initial airspaces
+      await loadAirspaces();
       
       // Load routes
       const routesResponse = await axios.get(`${API}/routes`);
@@ -476,6 +517,22 @@ const App = () => {
       console.error('Error loading data:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadAirspaces = async () => {
+    try {
+      let airspacesData = [];
+      
+      // Load airspaces for each selected country
+      for (const countryCode of selectedCountries) {
+        const response = await axios.get(`${API}/airspaces?country=${countryCode}`);
+        airspacesData = [...airspacesData, ...response.data];
+      }
+      
+      setAirspaces(airspacesData);
+    } catch (error) {
+      console.error('Error loading airspaces:', error);
     }
   };
 
@@ -492,6 +549,23 @@ const App = () => {
     );
   };
 
+  const handleCountryToggle = (countryCode) => {
+    if (countryCode === 'all') {
+      // Toggle all countries
+      if (selectedCountries.length === countries.length) {
+        setSelectedCountries([]);
+      } else {
+        setSelectedCountries(countries.map(c => c.code));
+      }
+    } else {
+      setSelectedCountries(prev => 
+        prev.includes(countryCode) 
+          ? prev.filter(c => c !== countryCode)
+          : [...prev, countryCode]
+      );
+    }
+  };
+
   const filteredAirspaces = airspaces.filter(airspace => 
     selectedAirspaceTypes.length === 0 || selectedAirspaceTypes.includes(airspace.type)
   );
@@ -500,7 +574,8 @@ const App = () => {
     return (
       <div className="loading-screen">
         <div className="spinner"></div>
-        <p>Loading Advanced Paramotorist Flight Planner...</p>
+        <p>Loading European Paramotorist Flight Planner...</p>
+        <p className="loading-details">Preparing airspace data for Spain, France, Germany, Italy...</p>
       </div>
     );
   }
@@ -508,7 +583,12 @@ const App = () => {
   return (
     <div className="app">
       <header className="app-header">
-        <h1>🪂 Advanced Paramotorist Flight Planner</h1>
+        <h1>🪂 European Paramotorist Flight Planner</h1>
+        <div className="header-stats">
+          <span className="stat-item">🌍 {countries.length} Countries</span>
+          <span className="stat-item">✈️ {airspaces.length} Airspaces</span>
+          <span className="stat-item">🛤️ {routes.length} Routes</span>
+        </div>
         <div className="header-controls">
           <button 
             onClick={() => setShowSidebar(!showSidebar)}
@@ -533,6 +613,12 @@ const App = () => {
               onPreferencesChange={setAirspacePreferences}
               isOpen={preferencesOpen}
               onToggle={() => setPreferencesOpen(!preferencesOpen)}
+            />
+            
+            <CountryFilter
+              countries={countries}
+              selectedCountries={selectedCountries}
+              onCountryToggle={handleCountryToggle}
             />
             
             <div className="airspace-controls">
@@ -573,7 +659,7 @@ const App = () => {
         <div className="map-container">
           <MapContainer 
             center={mapCenter} 
-            zoom={7} 
+            zoom={5} 
             className="leaflet-map"
           >
             <TileLayer
@@ -596,6 +682,7 @@ const App = () => {
                 <Popup>
                   <div className="airspace-popup">
                     <h4>{airspace.name}</h4>
+                    <p><strong>Country:</strong> {airspace.country} {countries.find(c => c.code === airspace.country)?.flag}</p>
                     <p><strong>Type:</strong> {airspace.type}</p>
                     {airspace.floor && <p><strong>Floor:</strong> {airspace.floor}</p>}
                     {airspace.ceiling && <p><strong>Ceiling:</strong> {airspace.ceiling}</p>}
