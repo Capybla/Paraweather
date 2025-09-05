@@ -556,10 +556,12 @@ async def create_route(route_data: RouteCreate):
         if len(avoidance_waypoints) > 0:
             flight_warnings.append(f"ℹ️ INFO: Added {len(avoidance_waypoints)} waypoints to avoid restricted airspace")
         
-        # Create route
+        # Create route - handle waypoints conflict
+        route_dict = route_data.dict(exclude={'airspace_preferences'})
+        route_dict['waypoints'] = all_route_points[1:-1]  # Exclude start and end points
+        
         route = FlightRoute(
-            **route_data.dict(exclude={'airspace_preferences'}),
-            waypoints=all_route_points[1:-1],  # Exclude start and end points
+            **route_dict,
             route_segments=route_segments,
             total_distance=total_distance,
             estimated_time=estimated_time,
