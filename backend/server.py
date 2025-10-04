@@ -513,8 +513,63 @@ def simple_avoidance_fallback(start: RoutePoint, end: RoutePoint, airspaces: Lis
     
     return waypoints
 
+def calculate_optimal_altitude(start_point: RoutePoint, end_point: RoutePoint, airspaces: List[Dict], preferences: AirspacePreferences) -> Tuple[float, List[str]]:
+    """Calculate optimal altitude for a segment considering airspace floors/ceilings"""
+    altitude_warnings = []
+    optimal_altitude = preferences.preferred_altitude
+    
+    # Sample points along the segment
+    segment_distance = haversine_distance(start_point.lat, start_point.lng, end_point.lat, end_point.lng)
+    num_samples = max(5, int(segment_distance * 2))  # More samples for better accuracy
+    
+    conflicting_airspaces = []
+    
+    for sample in range(num_samples + 1):
+        ratio = sample / num_samples if num_samples > 0 else 0
+        sample_lat = start_point.lat + ratio * (end_point.lat - start_point.lat)
+        sample_lng = start_point.lng + ratio * (end_point.lng - start_point.lng)
+        
+        for airspace in airspaces:
+            if point_in_polygon((sample_lat, sample_lng), airspace.get('coordinates', [])):
+                conflicting_airspaces.append(airspace)
+    
+    # Remove duplicates
+    unique_airspaces = {a['name']: a for a in conflicting_airspaces}.values()
+    
+    # Calculate optimal altitude considering all conflicting airspaces
+    for airspace in unique_airspaces:
+        airspace_type = airspace.get('type', 'Unknown')
+        airspace_name = airspace.get('name', 'Unknown')
+        country = airspace.get('country', 'EU')
+        floor = airspace.get('floor_meters', 0)
+        ceiling = airspace.get('ceiling_meters', 10000)
+        
+        if airspace_type in ['R', 'P']:
+            # Cannot fly through restricted/prohibited zones
+            altitude_warnings.append(f"CRITICAL: {airspace_name} ({country}) - No altitude clearance possible")
+        elif airspace_type in ['CTR', 'TMA']:
+            if preferences.avoid_ctr or preferences.avoid_tma:
+                if floor is not None and ceiling is not None:
+                    # Try to fly above the airspace
+                    if ceiling + 100 <= preferences.maximum_altitude:
+                        suggested_altitude = ceiling + 100  # 100m clearance
+                        if suggested_altitude > optimal_altitude:
+                            optimal_altitude = suggested_altitude
+                            altitude_warnings.append(f"ALTITUDE: Flying at {optimal_altitude}m to clear {airspace_name} ({country})")
+                    else:
+                        altitude_warnings.append(f"WARNING: Cannot clear {airspace_name} ({country}) - exceeds max altitude")
+            else:
+                altitude_warnings.append(f"INFO: Entering {airspace_name} ({country}) - clearance required")
+        elif airspace_type == 'D':
+            altitude_warnings.append(f"CAUTION: Danger area {airspace_name} ({country}) - monitor NOTAMs")
+    
+    # Ensure altitude is within user preferences
+    optimal_altitude = max(preferences.minimum_altitude, min(optimal_altitude, preferences.maximum_altitude))
+    
+    return optimal_altitude, altitude_warnings
+
 def calculate_route_segments(route_points: List[RoutePoint], airspaces: List[Dict], preferences: AirspacePreferences) -> List[RouteSegment]:
-    """Calculate route segments with altitude planning and airspace analysis"""
+    """Enhanced route segments calculation with optimal altitude planning"""
     segments = []
     
     for i in range(len(route_points) - 1):
@@ -524,62 +579,53 @@ def calculate_route_segments(route_points: List[RoutePoint], airspaces: List[Dic
         # Calculate segment distance
         segment_distance = haversine_distance(start_point.lat, start_point.lng, end_point.lat, end_point.lng)
         
-        # Determine altitude for this segment
-        segment_altitude = preferences.preferred_altitude  # Default altitude
+        # Calculate optimal altitude for this segment
+        segment_altitude, altitude_warnings = calculate_optimal_altitude(start_point, end_point, airspaces, preferences)
         
-        # Check for airspace conflicts along this segment
-        segment_warnings = []
+        # Determine segment type based on warnings
         segment_type = "safe"
+        if any("CRITICAL" in warning for warning in altitude_warnings):
+            segment_type = "restricted"
+        elif any("WARNING" in warning for warning in altitude_warnings):
+            segment_type = "avoid"
+        elif any("CAUTION" in warning or "ALTITUDE" in warning for warning in altitude_warnings):
+            segment_type = "caution"
         
-        # Sample points along the segment for airspace checking
-        num_samples = max(5, int(segment_distance))  # More samples for longer segments
+        # Add airspace-specific requirements
+        enhanced_warnings = []
+        processed_airspaces = set()
+        
+        # Sample points for detailed airspace analysis
+        num_samples = max(3, int(segment_distance))
         for sample in range(num_samples + 1):
             ratio = sample / num_samples if num_samples > 0 else 0
             sample_lat = start_point.lat + ratio * (end_point.lat - start_point.lat)
             sample_lng = start_point.lng + ratio * (end_point.lng - start_point.lng)
             
-            # Check each airspace
             for airspace in airspaces:
-                if point_in_polygon((sample_lat, sample_lng), airspace.get('coordinates', [])):
+                airspace_name = airspace.get('name', 'Unknown')
+                if (airspace_name not in processed_airspaces and 
+                    point_in_polygon((sample_lat, sample_lng), airspace.get('coordinates', []))):
+                    
+                    processed_airspaces.add(airspace_name)
                     airspace_type = airspace.get('type', 'Unknown')
-                    airspace_name = airspace.get('name', 'Unknown airspace')
                     country = airspace.get('country', 'EU')
                     
-                    # Check if we can fly above/below this airspace
-                    floor = airspace.get('floor_meters', 0)
-                    ceiling = airspace.get('ceiling_meters', 10000)  # Default high ceiling
-                    
-                    if airspace_type in ['R', 'P']:
-                        segment_type = "restricted"
-                        segment_warnings.append(f"PROHIBITED: {airspace_name} ({country}) - Entry forbidden")
-                    elif airspace_type in ['CTR', 'TMA'] and (preferences.avoid_ctr or preferences.avoid_tma):
-                        if segment_altitude > floor and segment_altitude < ceiling:
-                            # Try to fly above
-                            if ceiling < preferences.maximum_altitude:
-                                segment_altitude = ceiling + 50  # 50m above
-                                segment_type = "caution"
-                                segment_warnings.append(f"ALTITUDE ADJUSTED: Flying at {segment_altitude}m to clear {airspace_name} ({country})")
-                            else:
-                                segment_type = "avoid"
-                                segment_warnings.append(f"WARNING: Cannot clear {airspace_name} ({country}) at safe altitude")
-                    elif airspace_type == 'D':
-                        segment_type = "caution"
-                        segment_warnings.append(f"DANGER AREA: {airspace_name} ({country}) - Monitor NOTAMs")
-                    
-                    # Add requirements
+                    # Add specific requirements for this airspace
                     requirements = get_airspace_requirements(airspace_type)
                     for req in requirements:
-                        warning = f"{airspace_name} ({country}): {req}"
-                        if warning not in segment_warnings:
-                            segment_warnings.append(warning)
+                        enhanced_warnings.append(f"{airspace_name} ({country}): {req}")
         
-        # Create segment
+        # Combine altitude warnings with enhanced warnings
+        all_warnings = altitude_warnings + enhanced_warnings
+        
+        # Create enhanced segment
         segment = RouteSegment(
             start=Coordinate(lat=start_point.lat, lng=start_point.lng),
             end=Coordinate(lat=end_point.lat, lng=end_point.lng),
             altitude=segment_altitude,
             segment_type=segment_type,
-            airspace_warnings=segment_warnings,
+            airspace_warnings=all_warnings,
             distance=segment_distance
         )
         segments.append(segment)
