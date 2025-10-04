@@ -268,8 +268,206 @@ def line_intersects_polygon(line_coords: List[Tuple[float, float]], polygon_coor
     except:
         return False
 
+def calculate_route_cost(point1: RoutePoint, point2: RoutePoint, airspaces: List[Dict], preferences: AirspacePreferences) -> Tuple[float, List[str]]:
+    """Calculate the cost of flying between two points considering distance, airspace, and altitude"""
+    distance = haversine_distance(point1.lat, point1.lng, point2.lat, point2.lng)
+    base_cost = distance
+    penalties = []
+    
+    # Sample points along the path for airspace analysis
+    num_samples = max(5, int(distance))
+    for i in range(num_samples + 1):
+        ratio = i / num_samples if num_samples > 0 else 0
+        sample_lat = point1.lat + ratio * (point2.lat - point1.lat)
+        sample_lng = point1.lng + ratio * (point2.lng - point1.lng)
+        
+        for airspace in airspaces:
+            if point_in_polygon((sample_lat, sample_lng), airspace.get('coordinates', [])):
+                airspace_type = airspace.get('type', 'Unknown')
+                airspace_name = airspace.get('name', 'Unknown')
+                
+                # Apply penalties based on airspace type and user preferences
+                penalty = 0
+                if airspace_type in ['R', 'P']:
+                    penalty = 1000  # Extremely high penalty for prohibited zones
+                    penalties.append(f"CRITICAL: {airspace_name} - Prohibited Zone")
+                elif airspace_type == 'CTR' and preferences.avoid_ctr:
+                    penalty = 50  # Moderate penalty for CTR
+                    penalties.append(f"CTR: {airspace_name} - Requires clearance")
+                elif airspace_type == 'TMA' and preferences.avoid_tma:
+                    penalty = 75  # Higher penalty for TMA
+                    penalties.append(f"TMA: {airspace_name} - Controlled airspace")
+                elif airspace_type == 'D' and preferences.avoid_danger:
+                    penalty = 25  # Lower penalty for danger areas
+                    penalties.append(f"DANGER: {airspace_name} - Monitor NOTAMs")
+                
+                base_cost += penalty
+                
+                # Break after first airspace conflict to avoid multiple penalties for same segment
+                if penalty > 0:
+                    break
+    
+    return base_cost, penalties
+
+def generate_grid_points(start: RoutePoint, end: RoutePoint, grid_size: int = 5) -> List[RoutePoint]:
+    """Generate a grid of potential waypoints between start and end"""
+    points = []
+    
+    # Create bounding box with some margin
+    min_lat = min(start.lat, end.lat) - 0.5
+    max_lat = max(start.lat, end.lat) + 0.5
+    min_lng = min(start.lng, end.lng) - 0.5
+    max_lng = max(start.lng, end.lng) + 0.5
+    
+    lat_step = (max_lat - min_lat) / grid_size
+    lng_step = (max_lng - min_lng) / grid_size
+    
+    for i in range(grid_size + 1):
+        for j in range(grid_size + 1):
+            lat = min_lat + i * lat_step
+            lng = min_lng + j * lng_step
+            
+            # Skip points too close to start or end
+            if (haversine_distance(lat, lng, start.lat, start.lng) > 5 and 
+                haversine_distance(lat, lng, end.lat, end.lng) > 5):
+                points.append(RoutePoint(
+                    lat=lat,
+                    lng=lng,
+                    altitude=300,  # Default altitude
+                    waypoint_name=f"Grid_{i}_{j}"
+                ))
+    
+    return points
+
+def dijkstra_route_planning(start: RoutePoint, end: RoutePoint, airspaces: List[Dict], preferences: AirspacePreferences) -> Tuple[List[RoutePoint], float, List[str]]:
+    """Advanced route planning using Dijkstra's algorithm with airspace avoidance"""
+    
+    # Generate potential waypoints
+    grid_points = generate_grid_points(start, end, grid_size=6)
+    all_points = [start] + grid_points + [end]
+    
+    # Initialize distances and previous points
+    distances = {i: float('inf') for i in range(len(all_points))}
+    previous = {i: None for i in range(len(all_points))}
+    all_penalties = {i: [] for i in range(len(all_points))}
+    
+    start_idx = 0
+    end_idx = len(all_points) - 1
+    distances[start_idx] = 0
+    
+    # Priority queue (simple implementation)
+    unvisited = list(range(len(all_points)))
+    
+    while unvisited:
+        # Find point with minimum distance
+        current = min(unvisited, key=lambda x: distances[x])
+        unvisited.remove(current)
+        
+        if current == end_idx:
+            break
+            
+        if distances[current] == float('inf'):
+            break
+        
+        # Check all neighbors
+        for neighbor in unvisited:
+            cost, penalties = calculate_route_cost(all_points[current], all_points[neighbor], airspaces, preferences)
+            
+            # Add distance-based cost scaling
+            distance_to_goal = haversine_distance(all_points[neighbor].lat, all_points[neighbor].lng, end.lat, end.lng)
+            heuristic_cost = cost + distance_to_goal * 0.1  # A* style heuristic
+            
+            new_distance = distances[current] + heuristic_cost
+            
+            if new_distance < distances[neighbor]:
+                distances[neighbor] = new_distance
+                previous[neighbor] = current
+                all_penalties[neighbor] = penalties
+    
+    # Reconstruct path
+    if distances[end_idx] == float('inf'):
+        # No valid path found, return direct route with warnings
+        return [start, end], haversine_distance(start.lat, start.lng, end.lat, end.lng), ["WARNING: No safe route found, using direct path"]
+    
+    path = []
+    current = end_idx
+    total_penalties = []
+    
+    while current is not None:
+        path.append(all_points[current])
+        total_penalties.extend(all_penalties[current])
+        current = previous[current]
+    
+    path.reverse()
+    
+    # Remove duplicate penalties
+    unique_penalties = list(set(total_penalties))
+    
+    return path[1:-1], distances[end_idx], unique_penalties  # Return waypoints (excluding start/end)
+
 def calculate_avoidance_waypoints(start: RoutePoint, end: RoutePoint, airspaces: List[Dict], preferences: AirspacePreferences) -> List[RoutePoint]:
-    """Calculate intermediate waypoints to avoid restricted airspaces"""
+    """Calculate optimal waypoints using advanced pathfinding algorithm"""
+    try:
+        waypoints, total_cost, penalties = dijkstra_route_planning(start, end, airspaces, preferences)
+        
+        # If the optimal path is too expensive, try alternative approach
+        if total_cost > 1000:  # High penalty indicates prohibited airspace
+            # Try a simpler arc-based avoidance
+            direct_distance = haversine_distance(start.lat, start.lng, end.lat, end.lng)
+            
+            # Create waypoints that arc around the direct path
+            mid_lat = (start.lat + end.lat) / 2
+            mid_lng = (start.lng + end.lng) / 2
+            
+            # Calculate perpendicular offset
+            bearing_to_end = bearing(start.lat, start.lng, end.lat, end.lng)
+            offset_bearing = (bearing_to_end + 90) % 360
+            
+            # Create arc waypoints
+            arc_distance = max(20, direct_distance * 0.3)  # 20km minimum or 30% of direct distance
+            lat_offset = arc_distance * math.cos(math.radians(offset_bearing)) / 111.32
+            lng_offset = arc_distance * math.sin(math.radians(offset_bearing)) / (111.32 * math.cos(math.radians(mid_lat)))
+            
+            waypoint1 = RoutePoint(
+                lat=start.lat + (end.lat - start.lat) * 0.33 + lat_offset * 0.5,
+                lng=start.lng + (end.lng - start.lng) * 0.33 + lng_offset * 0.5,
+                altitude=preferences.preferred_altitude,
+                waypoint_name="Arc Avoidance 1"
+            )
+            
+            waypoint2 = RoutePoint(
+                lat=mid_lat + lat_offset,
+                lng=mid_lng + lng_offset,
+                altitude=preferences.preferred_altitude,
+                waypoint_name="Arc Avoidance Center"
+            )
+            
+            waypoint3 = RoutePoint(
+                lat=start.lat + (end.lat - start.lat) * 0.67 + lat_offset * 0.5,
+                lng=start.lng + (end.lng - start.lng) * 0.67 + lng_offset * 0.5,
+                altitude=preferences.preferred_altitude,
+                waypoint_name="Arc Avoidance 2"
+            )
+            
+            return [waypoint1, waypoint2, waypoint3]
+        
+        # Filter waypoints that are too close to each other
+        filtered_waypoints = []
+        last_point = start
+        
+        for waypoint in waypoints:
+            if haversine_distance(last_point.lat, last_point.lng, waypoint.lat, waypoint.lng) > 15:  # Minimum 15km between waypoints
+                filtered_waypoints.append(waypoint)
+                last_point = waypoint
+        
+        return filtered_waypoints[:5]  # Limit to 5 waypoints maximum
+        
+    except Exception as e:
+        # Fallback to simple avoidance if advanced algorithm fails
+        return simple_avoidance_fallback(start, end, airspaces, preferences)
+
+def simple_avoidance_fallback(start: RoutePoint, end: RoutePoint, airspaces: List[Dict], preferences: AirspacePreferences) -> List[RoutePoint]:
+    """Simple fallback avoidance algorithm"""
     waypoints = []
     
     # Filter airspaces that should be avoided
@@ -287,10 +485,10 @@ def calculate_avoidance_waypoints(start: RoutePoint, end: RoutePoint, airspaces:
     
     restricted_airspaces = [a for a in airspaces if a.get('type') in avoid_types]
     
-    # Simple avoidance algorithm - if direct line intersects restricted airspace, add waypoints
+    # Check if direct line intersects any restricted airspace
     direct_line = [(start.lat, start.lng), (end.lat, end.lng)]
     
-    for airspace in restricted_airspaces:
+    for airspace in restricted_airspaces[:3]:  # Limit to first 3 conflicts
         if line_intersects_polygon(direct_line, airspace.get('coordinates', [])):
             # Calculate avoidance waypoint
             center_lat = sum(c['lat'] for c in airspace['coordinates']) / len(airspace['coordinates'])
@@ -300,8 +498,8 @@ def calculate_avoidance_waypoints(start: RoutePoint, end: RoutePoint, airspaces:
             route_bearing = bearing(start.lat, start.lng, end.lat, end.lng)
             avoidance_bearing = (route_bearing + 90) % 360  # 90 degrees offset
             
-            # Calculate avoidance point 10km away from airspace center
-            avoidance_distance = 10  # km
+            # Calculate avoidance point
+            avoidance_distance = 15  # km
             lat_offset = avoidance_distance * math.cos(math.radians(avoidance_bearing)) / 111.32
             lng_offset = avoidance_distance * math.sin(math.radians(avoidance_bearing)) / (111.32 * math.cos(math.radians(center_lat)))
             
@@ -309,7 +507,7 @@ def calculate_avoidance_waypoints(start: RoutePoint, end: RoutePoint, airspaces:
                 lat=center_lat + lat_offset,
                 lng=center_lng + lng_offset,
                 altitude=preferences.preferred_altitude,
-                waypoint_name=f"Avoid {airspace.get('name', 'Unknown')}"
+                waypoint_name=f"Avoid {airspace.get('name', 'Unknown')[:20]}"
             )
             waypoints.append(waypoint)
     
