@@ -876,7 +876,7 @@ const App = () => {
   const [selectedRoute, setSelectedRoute] = useState(null);
   const [isPlanning, setIsPlanning] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [mapCenter] = useState([46.2276, 2.2137]); // Center of Europe
+  const [mapCenter, setMapCenter] = useState([46.2276, 2.2137]); // Center of Europe
   const [showSidebar, setShowSidebar] = useState(true);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [airspacePreferences, setAirspacePreferences] = useState({
@@ -889,6 +889,12 @@ const App = () => {
     maximum_altitude: 1500,
     preferred_altitude: 300
   });
+
+  // Navigation mode states
+  const [navigationMode, setNavigationMode] = useState(false);
+  const [currentPosition, setCurrentPosition] = useState(null);
+  const [sensorStatus, setSensorStatus] = useState({ gps: false, barometer: false });
+  const [trackingEnabled, setTrackingEnabled] = useState(false);
 
   useEffect(() => {
     loadInitialData();
