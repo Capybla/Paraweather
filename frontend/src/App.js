@@ -205,6 +205,372 @@ const AirspacePreferences = ({ preferences, onPreferencesChange, isOpen, onToggl
   );
 };
 
+// GPS Position Tracker Component
+const GPSTracker = ({ onPositionUpdate, onSensorStatus }) => {
+  const [watchId, setWatchId] = useState(null);
+  const [sensorStatus, setSensorStatus] = useState({
+    gps: 'checking',
+    barometer: 'checking',
+    accuracy: null,
+    altitude: null
+  });
+
+  useEffect(() => {
+    let barometerSupported = false;
+    let altitudeFromBarometer = null;
+
+    // Check for GPS availability
+    if (!navigator.geolocation) {
+      setSensorStatus(prev => ({ ...prev, gps: 'unavailable' }));
+      onSensorStatus({ gps: false, barometer: false });
+      return;
+    }
+
+    // Check for barometer/altitude sensors
+    if ('AbsoluteOrientationSensor' in window || 'Barometer' in window) {
+      barometerSupported = true;
+    }
+
+    // Start GPS tracking
+    const options = {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 1000
+    };
+
+    const successCallback = (position) => {
+      const { latitude, longitude, altitude, accuracy, altitudeAccuracy } = position.coords;
+      
+      setSensorStatus(prev => ({
+        ...prev,
+        gps: 'available',
+        accuracy: accuracy,
+        altitude: altitude,
+        barometer: altitude ? 'available' : 'gps-only'
+      }));
+
+      onPositionUpdate({
+        lat: latitude,
+        lng: longitude,
+        altitude: altitude || altitudeFromBarometer,
+        accuracy: accuracy,
+        altitudeAccuracy: altitudeAccuracy,
+        timestamp: position.timestamp
+      });
+
+      onSensorStatus({
+        gps: true,
+        barometer: altitude !== null || barometerSupported,
+        accuracy: accuracy
+      });
+    };
+
+    const errorCallback = (error) => {
+      console.warn('GPS Error:', error);
+      setSensorStatus(prev => ({ ...prev, gps: 'denied' }));
+      onSensorStatus({ gps: false, barometer: barometerSupported });
+    };
+
+    const id = navigator.geolocation.watchPosition(successCallback, errorCallback, options);
+    setWatchId(id);
+
+    // Try to access barometer data if available
+    if ('Barometer' in window) {
+      try {
+        const barometer = new window.Barometer({ frequency: 1 });
+        barometer.addEventListener('reading', () => {
+          // Convert pressure to altitude approximation
+          const pressure = barometer.pressure;
+          const altitude = 44330 * (1 - Math.pow(pressure / 1013.25, 1/5.255));
+          altitudeFromBarometer = altitude;
+        });
+        barometer.start();
+      } catch (e) {
+        console.warn('Barometer not accessible:', e);
+      }
+    }
+
+    return () => {
+      if (id) {
+        navigator.geolocation.clearWatch(id);
+      }
+    };
+  }, [onPositionUpdate, onSensorStatus]);
+
+  return null; // This component doesn't render anything
+};
+
+// Real-time Navigation Component
+const NavigationMode = ({ route, currentPosition, onNavigationEnd }) => {
+  const [currentWaypointIndex, setCurrentWaypointIndex] = useState(0);
+  const [navigationState, setNavigationState] = useState('navigating'); // navigating, completed, off-route
+  const [routeProgress, setRouteProgress] = useState(0);
+  const [nextDirection, setNextDirection] = useState(null);
+  const [distanceToNext, setDistanceToNext] = useState(0);
+  const [estimatedArrival, setEstimatedArrival] = useState(null);
+  const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [lastAnnouncementDistance, setLastAnnouncementDistance] = useState(null);
+
+  const allWaypoints = [
+    route.start_point,
+    ...route.waypoints,
+    route.end_point
+  ];
+
+  useEffect(() => {
+    if (!currentPosition || !route) return;
+
+    const currentWaypoint = allWaypoints[currentWaypointIndex];
+    if (!currentWaypoint) return;
+
+    const distanceToWaypoint = calculateDistance(
+      currentPosition.lat, currentPosition.lng,
+      currentWaypoint.lat, currentWaypoint.lng
+    );
+
+    setDistanceToNext(distanceToWaypoint);
+
+    // Check if we've reached the current waypoint (within 100m)
+    if (distanceToWaypoint < 100 && currentWaypointIndex < allWaypoints.length - 1) {
+      const nextIndex = currentWaypointIndex + 1;
+      setCurrentWaypointIndex(nextIndex);
+      
+      if (voiceEnabled) {
+        if (nextIndex === allWaypoints.length - 1) {
+          speakDirection("Approaching destination");
+        } else {
+          speakDirection(`Waypoint reached. Continue to next waypoint.`);
+        }
+      }
+    }
+
+    // Check if we've completed the route
+    if (currentWaypointIndex === allWaypoints.length - 1 && distanceToWaypoint < 50) {
+      setNavigationState('completed');
+      if (voiceEnabled) {
+        speakDirection("Destination reached. Flight navigation complete.");
+      }
+    }
+
+    // Calculate bearing to next waypoint
+    const bearing = calculateBearing(
+      currentPosition.lat, currentPosition.lng,
+      currentWaypoint.lat, currentWaypoint.lng
+    );
+
+    setNextDirection({
+      bearing: bearing,
+      compass: formatBearing(bearing),
+      waypoint: currentWaypoint.waypoint_name || `Waypoint ${currentWaypointIndex + 1}`
+    });
+
+    // Voice announcements at specific distances
+    if (voiceEnabled && distanceToWaypoint > 100) {
+      const distanceInKm = Math.round(distanceToWaypoint / 1000 * 10) / 10;
+      
+      if (distanceInKm >= 5 && (lastAnnouncementDistance === null || lastAnnouncementDistance - distanceInKm >= 5)) {
+        speakDirection(`${distanceInKm} kilometers to next waypoint`);
+        setLastAnnouncementDistance(distanceInKm);
+      } else if (distanceToWaypoint <= 500 && distanceToWaypoint > 100 && 
+                 (lastAnnouncementDistance === null || lastAnnouncementDistance > 0.5)) {
+        speakDirection(`500 meters to waypoint`);
+        setLastAnnouncementDistance(0.5);
+      }
+    }
+
+    // Calculate route progress
+    const totalWaypoints = allWaypoints.length - 1;
+    const progress = ((currentWaypointIndex + (1 - distanceToWaypoint / 1000)) / totalWaypoints) * 100;
+    setRouteProgress(Math.min(100, Math.max(0, progress)));
+
+    // Estimate arrival time (assuming 50 km/h average speed)
+    const remainingDistance = distanceToWaypoint / 1000; // km
+    const averageSpeed = 50; // km/h for paramotor
+    const eta = new Date(Date.now() + (remainingDistance / averageSpeed) * 60 * 60 * 1000);
+    setEstimatedArrival(eta);
+
+  }, [currentPosition, currentWaypointIndex, route, voiceEnabled, lastAnnouncementDistance]);
+
+  if (!route || !currentPosition) return null;
+
+  return (
+    <div className="navigation-panel">
+      <div className="navigation-header">
+        <h3>🧭 Flight Navigation</h3>
+        <div className="navigation-controls">
+          <button 
+            onClick={() => setVoiceEnabled(!voiceEnabled)}
+            className={`voice-toggle ${voiceEnabled ? 'active' : ''}`}
+          >
+            {voiceEnabled ? '🔊' : '🔇'}
+          </button>
+          <button onClick={onNavigationEnd} className="end-navigation-btn">
+            End Navigation
+          </button>
+        </div>
+      </div>
+
+      <div className="navigation-content">
+        <div className="route-progress">
+          <div className="progress-bar">
+            <div 
+              className="progress-fill" 
+              style={{ width: `${routeProgress}%` }}
+            ></div>
+          </div>
+          <span className="progress-text">{Math.round(routeProgress)}% Complete</span>
+        </div>
+
+        {nextDirection && (
+          <div className="next-direction">
+            <div className="direction-compass">
+              <div className="compass-bearing">{Math.round(nextDirection.bearing)}°</div>
+              <div className="compass-direction">{nextDirection.compass}</div>
+            </div>
+            <div className="direction-info">
+              <div className="direction-distance">
+                {distanceToNext < 1000 
+                  ? `${Math.round(distanceToNext)}m` 
+                  : `${(distanceToNext / 1000).toFixed(1)}km`
+                }
+              </div>
+              <div className="direction-target">to {nextDirection.waypoint}</div>
+            </div>
+          </div>
+        )}
+
+        <div className="navigation-stats">
+          <div className="nav-stat">
+            <span className="stat-label">Current Alt:</span>
+            <span className="stat-value">
+              {currentPosition.altitude ? `${Math.round(currentPosition.altitude)}m` : 'GPS only'}
+            </span>
+          </div>
+          <div className="nav-stat">
+            <span className="stat-label">GPS Accuracy:</span>
+            <span className="stat-value">±{Math.round(currentPosition.accuracy || 0)}m</span>
+          </div>
+          <div className="nav-stat">
+            <span className="stat-label">ETA:</span>
+            <span className="stat-value">
+              {estimatedArrival ? estimatedArrival.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '--:--'}
+            </span>
+          </div>
+        </div>
+
+        <div className="waypoint-list">
+          {allWaypoints.map((waypoint, index) => (
+            <div 
+              key={index} 
+              className={`waypoint-item ${index === currentWaypointIndex ? 'current' : ''} ${index < currentWaypointIndex ? 'completed' : ''}`}
+            >
+              <div className="waypoint-icon">
+                {index < currentWaypointIndex ? '✅' : index === currentWaypointIndex ? '📍' : '⭕'}
+              </div>
+              <div className="waypoint-name">
+                {index === 0 ? 'Start' : 
+                 index === allWaypoints.length - 1 ? 'Destination' :
+                 waypoint.waypoint_name || `Waypoint ${index}`}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {navigationState === 'completed' && (
+          <div className="navigation-complete">
+            <div className="complete-icon">🎯</div>
+            <div className="complete-text">Destination Reached!</div>
+            <div className="complete-subtext">Flight navigation completed successfully</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// Current Position Marker Component
+const CurrentPositionMarker = ({ position, accuracy }) => {
+  const map = useMap();
+
+  useEffect(() => {
+    if (position) {
+      map.setView([position.lat, position.lng], map.getZoom(), { animate: true });
+    }
+  }, [position, map]);
+
+  if (!position) return null;
+
+  const accuracyCircleOptions = {
+    color: '#4285f4',
+    fillColor: '#4285f4',
+    fillOpacity: 0.1,
+    weight: 1,
+    radius: accuracy || 50
+  };
+
+  return (
+    <>
+      {/* Accuracy circle */}
+      <L.Circle 
+        center={[position.lat, position.lng]} 
+        pathOptions={accuracyCircleOptions}
+        radius={accuracy || 50}
+      />
+      
+      {/* Current position marker */}
+      <Marker 
+        position={[position.lat, position.lng]}
+        icon={L.divIcon({
+          className: 'current-position-marker',
+          html: '<div class="position-dot"></div>',
+          iconSize: [20, 20],
+          iconAnchor: [10, 10]
+        })}
+      >
+        <Popup>
+          <div className="position-popup">
+            <h4>📍 Current Position</h4>
+            <p><strong>Coordinates:</strong> {position.lat.toFixed(6)}, {position.lng.toFixed(6)}</p>
+            <p><strong>Altitude:</strong> {position.altitude ? `${Math.round(position.altitude)}m` : 'Not available'}</p>
+            <p><strong>Accuracy:</strong> ±{Math.round(accuracy || 0)}m</p>
+            <p><strong>Time:</strong> {new Date(position.timestamp).toLocaleTimeString()}</p>
+          </div>
+        </Popup>
+      </Marker>
+    </>
+  );
+};
+
+// Sensor Status Warning Component
+const SensorWarnings = ({ sensorStatus }) => {
+  if (!sensorStatus || (sensorStatus.gps && sensorStatus.barometer)) {
+    return null;
+  }
+
+  return (
+    <div className="sensor-warnings">
+      {!sensorStatus.gps && (
+        <div className="sensor-warning gps-warning">
+          <span className="warning-icon">⚠️</span>
+          <span className="warning-text">GPS not available - Real-time navigation disabled</span>
+        </div>
+      )}
+      {sensorStatus.gps && !sensorStatus.barometer && (
+        <div className="sensor-warning barometer-warning">
+          <span className="warning-icon">⚠️</span>
+          <span className="warning-text">Barometer not available - Altitude from GPS only (less accurate)</span>
+        </div>
+      )}
+      {sensorStatus.gps && sensorStatus.accuracy && sensorStatus.accuracy > 50 && (
+        <div className="sensor-warning accuracy-warning">
+          <span className="warning-icon">⚠️</span>
+          <span className="warning-text">GPS accuracy low (±{Math.round(sensorStatus.accuracy)}m) - Use with caution</span>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // Route segments visualization component
 const RouteSegments = ({ route }) => {
   if (!route || !route.route_segments || route.route_segments.length === 0) {
