@@ -1033,20 +1033,42 @@ const App = () => {
           <span className="stat-item">🌍 {countries.length} Countries</span>
           <span className="stat-item">✈️ {airspaces.length} Airspaces</span>
           <span className="stat-item">🛤️ {routes.length} Routes</span>
+          {currentPosition && (
+            <span className="stat-item">📍 GPS Active</span>
+          )}
         </div>
         <div className="header-controls">
+          {selectedRoute && !navigationMode && (
+            <button 
+              onClick={handleStartNavigation}
+              className={`navigation-btn ${sensorStatus.gps ? 'enabled' : 'disabled'}`}
+              disabled={!sensorStatus.gps}
+            >
+              🧭 Start Navigation
+            </button>
+          )}
+          {navigationMode && (
+            <button 
+              onClick={handleEndNavigation}
+              className="navigation-btn active"
+            >
+              🛑 End Navigation
+            </button>
+          )}
           <button 
             onClick={() => setShowSidebar(!showSidebar)}
             className="sidebar-toggle"
           >
             {showSidebar ? '◀' : '▶'}
           </button>
-          <button 
-            onClick={() => setIsPlanning(!isPlanning)}
-            className={`plan-route-btn ${isPlanning ? 'active' : ''}`}
-          >
-            {isPlanning ? 'Cancel Planning' : 'Plan New Route'}
-          </button>
+          {!navigationMode && (
+            <button 
+              onClick={() => setIsPlanning(!isPlanning)}
+              className={`plan-route-btn ${isPlanning ? 'active' : ''}`}
+            >
+              {isPlanning ? 'Cancel Planning' : 'Plan New Route'}
+            </button>
+          )}
         </div>
       </header>
 
