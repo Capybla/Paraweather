@@ -977,6 +977,40 @@ const App = () => {
     }
   };
 
+  // Navigation handlers
+  const handleStartNavigation = () => {
+    if (!selectedRoute) {
+      alert('Please select a route to navigate');
+      return;
+    }
+    if (!sensorStatus.gps) {
+      alert('GPS is required for navigation. Please enable location services.');
+      return;
+    }
+    setNavigationMode(true);
+    setTrackingEnabled(true);
+    if (currentPosition) {
+      setMapCenter([currentPosition.lat, currentPosition.lng]);
+    }
+  };
+
+  const handleEndNavigation = () => {
+    setNavigationMode(false);
+    setTrackingEnabled(false);
+  };
+
+  const handlePositionUpdate = (position) => {
+    setCurrentPosition(position);
+    if (navigationMode) {
+      // Center map on current position during navigation
+      setMapCenter([position.lat, position.lng]);
+    }
+  };
+
+  const handleSensorStatus = (status) => {
+    setSensorStatus(status);
+  };
+
   const filteredAirspaces = airspaces.filter(airspace => 
     selectedAirspaceTypes.length === 0 || selectedAirspaceTypes.includes(airspace.type)
   );
