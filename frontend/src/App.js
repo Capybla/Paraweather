@@ -1124,9 +1124,21 @@ const App = () => {
         )}
 
         <div className="map-container">
+          {/* Sensor warnings */}
+          <SensorWarnings sensorStatus={sensorStatus} />
+          
+          {/* Navigation panel */}
+          {navigationMode && selectedRoute && (
+            <NavigationMode 
+              route={selectedRoute}
+              currentPosition={currentPosition}
+              onNavigationEnd={handleEndNavigation}
+            />
+          )}
+
           <MapContainer 
             center={mapCenter} 
-            zoom={5} 
+            zoom={navigationMode ? 15 : 5} 
             className="leaflet-map"
           >
             <TileLayer
@@ -1134,7 +1146,21 @@ const App = () => {
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             />
             
-            {/* Render airspaces */}
+            {/* GPS Tracker - always active */}
+            <GPSTracker 
+              onPositionUpdate={handlePositionUpdate}
+              onSensorStatus={handleSensorStatus}
+            />
+
+            {/* Current position marker */}
+            {currentPosition && (
+              <CurrentPositionMarker 
+                position={currentPosition}
+                accuracy={currentPosition.accuracy}
+              />
+            )}
+            
+            {/* Render airspaces (reduced opacity during navigation) */}
             {filteredAirspaces.map(airspace => (
               <Polygon
                 key={airspace.id}
@@ -1142,8 +1168,9 @@ const App = () => {
                 pathOptions={{
                   color: getAirspaceColor(airspace.type),
                   fillColor: getAirspaceColor(airspace.type),
-                  fillOpacity: 0.2,
-                  weight: 2
+                  fillOpacity: navigationMode ? 0.1 : 0.2,
+                  weight: navigationMode ? 1 : 2,
+                  opacity: navigationMode ? 0.6 : 1
                 }}
               >
                 <Popup>
@@ -1167,7 +1194,7 @@ const App = () => {
               </Polygon>
             ))}
 
-            {/* Render selected route with segments */}
+            {/* Render selected route with segments (highlighted during navigation) */}
             {selectedRoute && <RouteSegments route={selectedRoute} />}
 
             {/* Render route waypoints */}
@@ -1182,13 +1209,15 @@ const App = () => {
               </Marker>
             ))}
 
-            <RoutePlanner 
-              onRouteCreate={handleRouteCreate}
-              isPlanning={isPlanning}
-              setIsPlanning={setIsPlanning}
-              airspacePreferences={airspacePreferences}
-              onPreferencesChange={setAirspacePreferences}
-            />
+            {!navigationMode && (
+              <RoutePlanner 
+                onRouteCreate={handleRouteCreate}
+                isPlanning={isPlanning}
+                setIsPlanning={setIsPlanning}
+                airspacePreferences={airspacePreferences}
+                onPreferencesChange={setAirspacePreferences}
+              />
+            )}
           </MapContainer>
         </div>
       </div>
