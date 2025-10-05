@@ -1111,6 +1111,271 @@ body {
 .avoid-segment { color: #ff6600; }
 .restricted-segment { color: #ff0000; }
 
+/* Navigation Mode Styles */
+.navigation-btn {
+  background: #28a745;
+  border: none;
+  color: white;
+  padding: 0.75rem 1.5rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  margin-right: 0.5rem;
+}
+
+.navigation-btn:hover:not(:disabled) {
+  background: #218838;
+  transform: translateY(-1px);
+}
+
+.navigation-btn.active {
+  background: #dc3545;
+}
+
+.navigation-btn.active:hover {
+  background: #c82333;
+}
+
+.navigation-btn:disabled {
+  background: #6c757d;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Navigation Panel */
+.navigation-panel {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+  z-index: 1000;
+  min-width: 350px;
+  max-width: 400px;
+}
+
+.navigation-header {
+  background: linear-gradient(135deg, #28a745, #20c997);
+  color: white;
+  padding: 1rem 1.5rem;
+  border-radius: 12px 12px 0 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.navigation-header h3 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.navigation-controls {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.voice-toggle {
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  padding: 0.5rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 1.1rem;
+  transition: all 0.3s ease;
+}
+
+.voice-toggle:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.voice-toggle.active {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.end-navigation-btn {
+  background: #dc3545;
+  border: none;
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: background-color 0.3s ease;
+}
+
+.end-navigation-btn:hover {
+  background: #c82333;
+}
+
+.navigation-content {
+  padding: 1.5rem;
+}
+
+.route-progress {
+  margin-bottom: 1.5rem;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 8px;
+  background: #e9ecef;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 0.5rem;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #28a745, #20c997);
+  transition: width 0.3s ease;
+}
+
+.progress-text {
+  font-size: 0.9rem;
+  color: #666;
+  text-align: center;
+  display: block;
+}
+
+.next-direction {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  background: #f8f9fa;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+}
+
+.direction-compass {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
+  background: linear-gradient(135deg, #007bff, #0056b3);
+  border-radius: 50%;
+  color: white;
+  font-weight: bold;
+}
+
+.compass-bearing {
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.compass-direction {
+  font-size: 0.8rem;
+  opacity: 0.9;
+}
+
+.direction-info {
+  flex: 1;
+}
+
+.direction-distance {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #28a745;
+  line-height: 1;
+}
+
+.direction-target {
+  font-size: 0.9rem;
+  color: #666;
+  margin-top: 0.25rem;
+}
+
+.navigation-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.nav-stat {
+  text-align: center;
+}
+
+.stat-label {
+  display: block;
+  font-size: 0.8rem;
+  color: #666;
+  margin-bottom: 0.25rem;
+}
+
+.stat-value {
+  display: block;
+  font-size: 1rem;
+  font-weight: bold;
+  color: #333;
+}
+
+.waypoint-list {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.waypoint-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  margin-bottom: 0.5rem;
+  border-radius: 6px;
+  transition: all 0.3s ease;
+}
+
+.waypoint-item.current {
+  background: #e3f2fd;
+  border: 2px solid #2196f3;
+}
+
+.waypoint-item.completed {
+  background: #e8f5e8;
+  opacity: 0.7;
+}
+
+.waypoint-icon {
+  font-size: 1.2rem;
+  min-width: 24px;
+}
+
+.waypoint-name {
+  flex: 1;
+  font-weight: 500;
+  color: #333;
+}
+
+.navigation-complete {
+  text-align: center;
+  padding: 2rem 1rem;
+  background: linear-gradient(135deg, #28a745, #20c997);
+  border-radius: 8px;
+  color: white;
+  margin-top: 1rem;
+}
+
+.complete-icon {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+}
+
+.complete-text {
+  font-size: 1.2rem;
+  font-weight: bold;
+  margin-bottom: 0.5rem;
+}
+
+.complete-subtext {
+  font-size: 0.9rem;
+  opacity: 0.9;
+}
+
 /* Navigation mode adjustments */
 .app.navigation-mode .sidebar {
   width: 300px;
