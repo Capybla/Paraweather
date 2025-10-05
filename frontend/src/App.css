@@ -848,6 +848,161 @@ body {
 
 .progress-fill {
   height: 100%;
+/* Current Position Marker */
+.current-position-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
+.position-dot {
+  width: 20px;
+  height: 20px;
+  background: #4285f4;
+  border: 3px solid white;
+  border-radius: 50%;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  animation: pulse-gps 2s infinite;
+}
+
+@keyframes pulse-gps {
+  0% {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3), 0 0 0 0 rgba(66, 133, 244, 0.7);
+  }
+  70% {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3), 0 0 0 15px rgba(66, 133, 244, 0);
+  }
+  100% {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3), 0 0 0 0 rgba(66, 133, 244, 0);
+  }
+}
+
+.position-popup h4 {
+  color: #4285f4;
+  margin-bottom: 0.5rem;
+}
+
+/* Sensor Warnings */
+.sensor-warnings {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: 400px;
+}
+
+.sensor-warning {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  background: white;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  animation: slideDown 0.3s ease;
+}
+
+.sensor-warning.gps-warning {
+  border-left: 4px solid #dc3545;
+}
+
+.sensor-warning.barometer-warning {
+  border-left: 4px solid #ffc107;
+}
+
+.sensor-warning.accuracy-warning {
+  border-left: 4px solid #fd7e14;
+}
+
+.warning-icon {
+  font-size: 1.2rem;
+  min-width: 24px;
+}
+
+.warning-text {
+  font-size: 0.9rem;
+  color: #333;
+  font-weight: 500;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Navigation mode adjustments */
+.app.navigation-mode .sidebar {
+  width: 300px;
+}
+
+.app.navigation-mode .leaflet-map {
+  filter: brightness(0.95);
+}
+
+/* Responsive navigation */
+@media (max-width: 768px) {
+  .navigation-panel {
+    position: relative;
+    top: 0;
+    right: 0;
+    margin: 1rem;
+    min-width: auto;
+    max-width: none;
+  }
+  
+  .sensor-warnings {
+    position: relative;
+    left: 0;
+    transform: none;
+    margin: 1rem;
+  }
+  
+  .navigation-stats {
+    grid-template-columns: 1fr 1fr;
+  }
+  
+  .next-direction {
+    flex-direction: column;
+    text-align: center;
+  }
+  
+  .direction-compass {
+    width: 60px;
+    height: 60px;
+  }
+  
+  .navigation-btn {
+    padding: 0.5rem 1rem;
+    font-size: 0.9rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .header-stats .stat-item {
+    display: none;
+  }
+  
+  .header-stats .stat-item:last-child {
+    display: inline-block;
+  }
+  
+  .navigation-content {
+    padding: 1rem;
+  }
+  
+  .waypoint-list {
+    max-height: 150px;
+  }
+}
   background: linear-gradient(90deg, #28a745, #20c997);
   transition: width 0.3s ease;
 }
