@@ -12,7 +12,7 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || `${window.location.protocol}//${window.location.hostname}:8001`;
 const API = `${BACKEND_URL}/api`;
 
 // Navigation and tracking utilities
@@ -71,14 +71,18 @@ const getAirspaceColor = (type) => {
 };
 
 // Get route segment color based on segment type
-const getSegmentColor = (segmentType) => {
-  const colors = {
-    'safe': '#00ff00',      // Green - Safe
-    'caution': '#ffaa00',   // Orange - Caution
-    'avoid': '#ff6600',     // Red-Orange - Avoid
-    'restricted': '#ff0000' // Red - Restricted
+const getSegmentColor = (segmentType, altitudeStatus = 'optimal') => {
+  const altitudePalette = {
+    optimal: '#00c853',   // verde: altitud cerca de preferida
+    minimum: '#00b0ff',   // azul: cerca del mínimo configurado
+    high: '#ffab00',      // ámbar: por encima de preferida
+    near_max: '#ff3d00'   // naranja/rojo: cerca del máximo permitido
   };
-  return colors[segmentType] || '#888888';
+
+  if (segmentType === 'restricted') return '#d50000';
+  if (segmentType === 'avoid') return '#ff6d00';
+
+  return altitudePalette[altitudeStatus] || '#888888';
 };
 
 // Country filter component
@@ -206,11 +210,15 @@ const AirspacePreferences = ({ preferences, onPreferencesChange, isOpen, onToggl
 };
 
 // GPS Position Tracker Component
-const GPSTracker = ({ onPositionUpdate, onSensorStatus }) => {
+const GPSTracker = ({ onPositionUpdate, onSensorStatus, onMotionUpdate }) => {
   const [watchId, setWatchId] = useState(null);
   const [sensorStatus, setSensorStatus] = useState({
     gps: 'checking',
     barometer: 'checking',
+    accelerometer: 'checking',
+    compass: 'checking',
+    speed: null,
+    heading: null,
     accuracy: null,
     altitude: null
   });
@@ -218,11 +226,13 @@ const GPSTracker = ({ onPositionUpdate, onSensorStatus }) => {
   useEffect(() => {
     let barometerSupported = false;
     let altitudeFromBarometer = null;
+    const hasDeviceOrientation = 'DeviceOrientationEvent' in window;
+    const hasDeviceMotion = 'DeviceMotionEvent' in window;
 
     // Check for GPS availability
     if (!navigator.geolocation) {
       setSensorStatus(prev => ({ ...prev, gps: 'unavailable' }));
-      onSensorStatus({ gps: false, barometer: false });
+      onSensorStatus({ gps: false, barometer: false, accelerometer: false, compass: false });
       return;
     }
 
@@ -255,12 +265,16 @@ const GPSTracker = ({ onPositionUpdate, onSensorStatus }) => {
         altitude: altitude || altitudeFromBarometer,
         accuracy: accuracy,
         altitudeAccuracy: altitudeAccuracy,
+        speed: position.coords.speed || null,
+        heading: position.coords.heading || null,
         timestamp: position.timestamp
       });
 
       onSensorStatus({
         gps: true,
         barometer: altitude !== null || barometerSupported,
+        accelerometer: hasDeviceMotion,
+        compass: hasDeviceOrientation,
         accuracy: accuracy
       });
     };
@@ -268,7 +282,7 @@ const GPSTracker = ({ onPositionUpdate, onSensorStatus }) => {
     const errorCallback = (error) => {
       console.warn('GPS Error:', error);
       setSensorStatus(prev => ({ ...prev, gps: 'denied' }));
-      onSensorStatus({ gps: false, barometer: barometerSupported });
+      onSensorStatus({ gps: false, barometer: barometerSupported, accelerometer: hasDeviceMotion, compass: hasDeviceOrientation });
     };
 
     const id = navigator.geolocation.watchPosition(successCallback, errorCallback, options);
@@ -290,12 +304,58 @@ const GPSTracker = ({ onPositionUpdate, onSensorStatus }) => {
       }
     }
 
+
+    const requestableMotion = typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function';
+    const requestableOrientation = typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function';
+
+    const handleOrientation = (event) => {
+      if (event.alpha !== null && event.alpha !== undefined) {
+        onMotionUpdate?.({ compassHeading: event.alpha });
+      }
+    };
+
+    const handleMotion = (event) => {
+      const acc = event.accelerationIncludingGravity || event.acceleration;
+      if (acc) {
+        const magnitude = Math.sqrt((acc.x || 0) ** 2 + (acc.y || 0) ** 2 + (acc.z || 0) ** 2);
+        onMotionUpdate?.({ acceleration: magnitude });
+      }
+    };
+
+    const setupSensors = async () => {
+      try {
+        if (requestableOrientation) {
+          await DeviceOrientationEvent.requestPermission();
+        }
+        if (requestableMotion) {
+          await DeviceMotionEvent.requestPermission();
+        }
+      } catch (err) {
+        console.warn('Motion/orientation permission not granted:', err);
+      }
+
+      if (hasDeviceOrientation) {
+        window.addEventListener('deviceorientation', handleOrientation);
+      }
+      if (hasDeviceMotion) {
+        window.addEventListener('devicemotion', handleMotion);
+      }
+    };
+
+    setupSensors();
+
     return () => {
       if (id) {
         navigator.geolocation.clearWatch(id);
       }
+      if (hasDeviceOrientation) {
+        window.removeEventListener('deviceorientation', handleOrientation);
+      }
+      if (hasDeviceMotion) {
+        window.removeEventListener('devicemotion', handleMotion);
+      }
     };
-  }, [onPositionUpdate, onSensorStatus]);
+  }, [onPositionUpdate, onSensorStatus, onMotionUpdate]);
 
   return null; // This component doesn't render anything
 };
@@ -571,6 +631,38 @@ const SensorWarnings = ({ sensorStatus }) => {
   );
 };
 
+
+
+const FlightConditionsPanel = ({ conditions, sensorStatus, motionData }) => {
+  if (!conditions) return null;
+
+  const recommendationLabel = {
+    recommended: '✅ Recomendado volar',
+    caution: '⚠️ Volar con precaución',
+    not_recommended: '⛔ No recomendado volar'
+  };
+
+  return (
+    <div className="flight-conditions-panel">
+      <h3>🌤️ Condiciones de vuelo</h3>
+      <p><strong>Tiempo:</strong> {conditions.weather_description} · {conditions.temperature_c.toFixed(1)}°C</p>
+      <p><strong>Viento:</strong> {conditions.wind_speed_ms.toFixed(1)} m/s ({Math.round(conditions.wind_direction_deg)}°)</p>
+      <p><strong>Visibilidad:</strong> {conditions.visibility_km.toFixed(1)} km</p>
+      <p><strong>Escala de vuelo:</strong> {conditions.flight_score}/100</p>
+      <p><strong>Recomendación:</strong> {recommendationLabel[conditions.recommendation] || conditions.recommendation}</p>
+      <p><strong>Despegue óptimo:</strong> {Math.round(conditions.takeoff_heading_deg)}° (contra viento)</p>
+      <p><strong>Aterrizaje óptimo:</strong> {Math.round(conditions.landing_heading_deg)}° (contra viento)</p>
+      <div className="mini-compass">
+        <div className="mini-compass-arrow" style={{ transform: `rotate(${motionData.compassHeading || conditions.wind_direction_deg}deg)` }} />
+      </div>
+      <p><strong>Brújula:</strong> {motionData.compassHeading ? `${Math.round(motionData.compassHeading)}°` : 'No disponible'}</p>
+      <p><strong>Velocidad (GPS):</strong> {motionData.speedMs ? `${motionData.speedMs.toFixed(1)} m/s` : 'No disponible'}</p>
+      <p><strong>Acelerómetro:</strong> {motionData.acceleration ? `${motionData.acceleration.toFixed(2)} m/s²` : 'No disponible'}</p>
+      <p><strong>Permisos:</strong> GPS {sensorStatus.gps ? '✅' : '❌'} · Barómetro {sensorStatus.barometer ? '✅' : '❌'} · Acelerómetro {sensorStatus.accelerometer ? '✅' : '❌'} · Brújula {sensorStatus.compass ? '✅' : '❌'}</p>
+    </div>
+  );
+};
+
 // Route segments visualization component
 const RouteSegments = ({ route }) => {
   if (!route || !route.route_segments || route.route_segments.length === 0) {
@@ -590,7 +682,7 @@ const RouteSegments = ({ route }) => {
             key={index}
             positions={positions}
             pathOptions={{
-              color: getSegmentColor(segment.segment_type),
+              color: getSegmentColor(segment.segment_type, segment.altitude_status),
               weight: 4,
               opacity: 0.8
             }}
@@ -601,6 +693,7 @@ const RouteSegments = ({ route }) => {
                 <p><strong>Distance:</strong> {segment.distance.toFixed(1)} km</p>
                 <p><strong>Altitude:</strong> {segment.altitude}m AGL</p>
                 <p><strong>Status:</strong> {segment.segment_type.toUpperCase()}</p>
+                <p><strong>Altitude profile:</strong> {(segment.altitude_status || 'optimal').toUpperCase()}</p>
                 {segment.airspace_warnings.length > 0 && (
                   <div className="segment-warnings">
                     <strong>Warnings:</strong>
@@ -842,8 +935,8 @@ const RouteDisplay = ({ routes, selectedRoute, onRouteSelect }) => {
                   <span 
                     key={idx}
                     className="segment-indicator"
-                    style={{ backgroundColor: getSegmentColor(segment.segment_type) }}
-                    title={`Segment ${idx + 1}: ${segment.segment_type} (${segment.altitude}m)`}
+                    style={{ backgroundColor: getSegmentColor(segment.segment_type, segment.altitude_status) }}
+                    title={`Segment ${idx + 1}: ${segment.segment_type} / ${segment.altitude_status || 'optimal'} (${segment.altitude}m)`}
                   ></span>
                 ))}
               </div>
@@ -893,8 +986,10 @@ const App = () => {
   // Navigation mode states
   const [navigationMode, setNavigationMode] = useState(false);
   const [currentPosition, setCurrentPosition] = useState(null);
-  const [sensorStatus, setSensorStatus] = useState({ gps: false, barometer: false });
+  const [sensorStatus, setSensorStatus] = useState({ gps: false, barometer: false, accelerometer: false, compass: false });
   const [trackingEnabled, setTrackingEnabled] = useState(false);
+  const [flightConditions, setFlightConditions] = useState(null);
+  const [motionData, setMotionData] = useState({ compassHeading: null, acceleration: null, speedMs: null });
 
   useEffect(() => {
     loadInitialData();
@@ -1001,6 +1096,7 @@ const App = () => {
 
   const handlePositionUpdate = (position) => {
     setCurrentPosition(position);
+    setMotionData(prev => ({ ...prev, speedMs: position.speed || prev.speedMs }));
     if (navigationMode) {
       // Center map on current position during navigation
       setMapCenter([position.lat, position.lng]);
@@ -1010,6 +1106,26 @@ const App = () => {
   const handleSensorStatus = (status) => {
     setSensorStatus(status);
   };
+
+  const handleMotionUpdate = (data) => {
+    setMotionData(prev => ({ ...prev, ...data }));
+  };
+
+  useEffect(() => {
+    const fetchConditions = async () => {
+      if (!currentPosition) return;
+      try {
+        const response = await axios.get(`${API}/conditions`, {
+          params: { lat: currentPosition.lat, lng: currentPosition.lng }
+        });
+        setFlightConditions(response.data);
+      } catch (error) {
+        console.error('Error loading flight conditions:', error);
+      }
+    };
+
+    fetchConditions();
+  }, [currentPosition]);
 
   const filteredAirspaces = airspaces.filter(airspace => 
     selectedAirspaceTypes.length === 0 || selectedAirspaceTypes.includes(airspace.type)
@@ -1087,6 +1203,12 @@ const App = () => {
               selectedCountries={selectedCountries}
               onCountryToggle={handleCountryToggle}
             />
+
+            <FlightConditionsPanel
+              conditions={flightConditions}
+              sensorStatus={sensorStatus}
+              motionData={motionData}
+            />
             
             <div className="airspace-controls">
               <h3>Airspace Filters</h3>
@@ -1150,6 +1272,7 @@ const App = () => {
             <GPSTracker 
               onPositionUpdate={handlePositionUpdate}
               onSensorStatus={handleSensorStatus}
+              onMotionUpdate={handleMotionUpdate}
             />
 
             {/* Current position marker */}
