@@ -1572,3 +1572,42 @@ body {
     height: 60px;
   }
 }
+.flight-conditions-panel {
+  background: #f7fbff;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  padding: 12px;
+  margin: 12px 0;
+  font-size: 0.9rem;
+}
+
+.flight-conditions-panel h3 {
+  margin: 0 0 8px 0;
+}
+
+.flight-conditions-panel p {
+  margin: 4px 0;
+}
+
+.mini-compass {
+  width: 64px;
+  height: 64px;
+  border: 2px solid #1f2937;
+  border-radius: 50%;
+  margin: 8px auto;
+  position: relative;
+  background: radial-gradient(circle, #fff 0%, #f1f5f9 100%);
+}
+
+.mini-compass-arrow {
+  position: absolute;
+  left: 50%;
+  top: 8px;
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-bottom: 22px solid #ef4444;
+  transform-origin: 50% 24px;
+  margin-left: -6px;
+}
