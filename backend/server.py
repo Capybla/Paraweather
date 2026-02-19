@@ -22,9 +22,11 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 # MongoDB connection
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+mongo_url = os.getenv('MONGO_URL', 'mongodb://localhost:27017')
+db_name = os.getenv('DB_NAME', 'paraweather')
+
+client = AsyncIOMotorClient(mongo_url, serverSelectionTimeoutMS=5000)
+db = client[db_name]
 
 # Create the main app without a prefix
 app = FastAPI()
@@ -43,6 +45,7 @@ class RouteSegment(BaseModel):
     end: Coordinate
     altitude: float  # meters above sea level
     segment_type: str  # "safe", "caution", "avoid", "restricted"
+    altitude_status: str = "optimal"  # "optimal", "minimum", "high", "near_max"
     airspace_warnings: List[str] = []
     distance: float  # segment distance in km
 
@@ -106,6 +109,19 @@ class WindData(BaseModel):
     speed: float  # m/s
     direction: float  # degrees
     altitude: Optional[float] = None
+
+class FlightCondition(BaseModel):
+    lat: float
+    lng: float
+    temperature_c: float
+    weather_description: str
+    wind_speed_ms: float
+    wind_direction_deg: float
+    visibility_km: float
+    flight_score: int  # 0-100
+    recommendation: str  # "not_recommended", "caution", "recommended"
+    takeoff_heading_deg: float
+    landing_heading_deg: float
 
 class SharedRoute(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -288,7 +304,10 @@ def calculate_route_cost(point1: RoutePoint, point2: RoutePoint, airspaces: List
                 
                 # Apply penalties based on airspace type and user preferences
                 penalty = 0
-                if airspace_type in ['R', 'P']:
+                if airspace_type == 'R' and preferences.avoid_restricted:
+                    penalty = 1000  # Extremely high penalty for restricted zones
+                    penalties.append(f"CRITICAL: {airspace_name} - Restricted Zone")
+                elif airspace_type == 'P' and preferences.avoid_prohibited:
                     penalty = 1000  # Extremely high penalty for prohibited zones
                     penalties.append(f"CRITICAL: {airspace_name} - Prohibited Zone")
                 elif airspace_type == 'CTR' and preferences.avoid_ctr:
@@ -548,7 +567,8 @@ def calculate_optimal_altitude(start_point: RoutePoint, end_point: RoutePoint, a
             # Cannot fly through restricted/prohibited zones
             altitude_warnings.append(f"CRITICAL: {airspace_name} ({country}) - No altitude clearance possible")
         elif airspace_type in ['CTR', 'TMA']:
-            if preferences.avoid_ctr or preferences.avoid_tma:
+            should_avoid = (airspace_type == 'CTR' and preferences.avoid_ctr) or (airspace_type == 'TMA' and preferences.avoid_tma)
+            if should_avoid:
                 if floor is not None and ceiling is not None:
                     # Try to fly above the airspace
                     if ceiling + 100 <= preferences.maximum_altitude:
@@ -567,6 +587,19 @@ def calculate_optimal_altitude(start_point: RoutePoint, end_point: RoutePoint, a
     optimal_altitude = max(preferences.minimum_altitude, min(optimal_altitude, preferences.maximum_altitude))
     
     return optimal_altitude, altitude_warnings
+
+def classify_altitude_status(altitude: float, preferences: AirspacePreferences) -> str:
+    """Classify altitude against user preferences for UI coloring."""
+    if altitude <= preferences.minimum_altitude + 50:
+        return "minimum"
+    if altitude >= preferences.maximum_altitude - 100:
+        return "near_max"
+    if abs(altitude - preferences.preferred_altitude) <= 75:
+        return "optimal"
+    if altitude > preferences.preferred_altitude:
+        return "high"
+    return "optimal"
+
 
 def calculate_route_segments(route_points: List[RoutePoint], airspaces: List[Dict], preferences: AirspacePreferences) -> List[RouteSegment]:
     """Enhanced route segments calculation with optimal altitude planning"""
@@ -619,12 +652,15 @@ def calculate_route_segments(route_points: List[RoutePoint], airspaces: List[Dic
         # Combine altitude warnings with enhanced warnings
         all_warnings = altitude_warnings + enhanced_warnings
         
+        altitude_status = classify_altitude_status(segment_altitude, preferences)
+
         # Create enhanced segment
         segment = RouteSegment(
             start=Coordinate(lat=start_point.lat, lng=start_point.lng),
             end=Coordinate(lat=end_point.lat, lng=end_point.lng),
             altitude=segment_altitude,
             segment_type=segment_type,
+            altitude_status=altitude_status,
             airspace_warnings=all_warnings,
             distance=segment_distance
         )
@@ -644,6 +680,61 @@ async def get_wind_data(lat: float, lng: float, altitude: float = 1000) -> WindD
         direction=random.uniform(0, 360),  # Random direction
         altitude=altitude
     )
+
+
+def weather_code_to_text(code: int) -> str:
+    mapping = {
+        0: "Clear sky",
+        1: "Mainly clear",
+        2: "Partly cloudy",
+        3: "Overcast",
+        45: "Fog",
+        48: "Rime fog",
+        51: "Light drizzle",
+        53: "Drizzle",
+        55: "Dense drizzle",
+        61: "Light rain",
+        63: "Rain",
+        65: "Heavy rain",
+        71: "Light snow",
+        73: "Snow",
+        75: "Heavy snow",
+        95: "Thunderstorm"
+    }
+    return mapping.get(code, "Variable weather")
+
+
+def compute_flight_score(wind_speed: float, visibility_km: float, weather_code: int) -> Tuple[int, str]:
+    score = 100
+
+    if wind_speed > 14:
+        score -= 60
+    elif wind_speed > 10:
+        score -= 35
+    elif wind_speed > 7:
+        score -= 15
+
+    if visibility_km < 2:
+        score -= 50
+    elif visibility_km < 5:
+        score -= 30
+    elif visibility_km < 8:
+        score -= 10
+
+    if weather_code in [95]:
+        score -= 60
+    elif weather_code in [61, 63, 65, 71, 73, 75, 45, 48]:
+        score -= 25
+    elif weather_code in [51, 53, 55]:
+        score -= 15
+
+    score = max(0, min(100, score))
+
+    if score >= 70:
+        return score, "recommended"
+    if score >= 45:
+        return score, "caution"
+    return score, "not_recommended"
 
 
 # Ultra-Detailed Spanish Airspace Data + European Coverage
@@ -1646,6 +1737,53 @@ async def create_route(route_data: RouteCreate):
     except Exception as e:
         logger.error(f"Error creating route: {e}")
         raise HTTPException(status_code=500, detail="Failed to create route")
+
+
+
+@api_router.get("/conditions", response_model=FlightCondition)
+async def get_flight_conditions(lat: float, lng: float):
+    """Get current weather/wind/visibility and flight recommendation for a location."""
+    try:
+        weather_url = (
+            "https://api.open-meteo.com/v1/forecast"
+            f"?latitude={lat}&longitude={lng}"
+            "&current=temperature_2m,weather_code,wind_speed_10m,wind_direction_10m,visibility"
+        )
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.get(weather_url)
+            response.raise_for_status()
+            payload = response.json()
+
+        current = payload.get("current", {})
+        temperature_c = float(current.get("temperature_2m", 20.0))
+        weather_code = int(current.get("weather_code", 0))
+        wind_speed = float(current.get("wind_speed_10m", 0.0))
+        wind_direction = float(current.get("wind_direction_10m", 0.0))
+        visibility_m = float(current.get("visibility", 10000.0))
+        visibility_km = visibility_m / 1000.0
+
+        score, recommendation = compute_flight_score(wind_speed, visibility_km, weather_code)
+
+        # Aviation rule of thumb: takeoff/landing against wind direction
+        takeoff_heading = (wind_direction + 180) % 360
+        landing_heading = (wind_direction + 180) % 360
+
+        return FlightCondition(
+            lat=lat,
+            lng=lng,
+            temperature_c=temperature_c,
+            weather_description=weather_code_to_text(weather_code),
+            wind_speed_ms=wind_speed,
+            wind_direction_deg=wind_direction,
+            visibility_km=visibility_km,
+            flight_score=score,
+            recommendation=recommendation,
+            takeoff_heading_deg=takeoff_heading,
+            landing_heading_deg=landing_heading,
+        )
+    except Exception as e:
+        logger.error(f"Error getting flight conditions: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get flight conditions")
 
 @api_router.get("/routes", response_model=List[FlightRoute])
 async def get_routes():
