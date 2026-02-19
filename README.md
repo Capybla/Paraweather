@@ -53,3 +53,19 @@ Con eso se abre Android Studio para generar el APK/AAB.
 - La app guarda el último parte meteorológico y lo muestra cuando no hay red.
 - Se muestra alerta de desconexión y se mantiene navegación con GPS local.
 - En build de producción se registra un service worker para cachear recursos base.
+
+
+## Estructura para mantenimiento (Open Source)
+
+- `frontend/src/App.js`: UI principal y lógica de widgets.
+- `frontend/src/config.js`: valores por defecto de páginas/widgets y claves de almacenamiento (punto recomendado para personalización).
+- `frontend/src/serviceWorkerRegistration.js` + `frontend/public/sw.js`: estrategia offline/cache.
+- `backend/server.py`: API y lógica de reglas de vuelo.
+
+## Guía rápida para contribuir
+
+- Haz cambios pequeños y atómicos por PR.
+- Mantén configuraciones editables en archivos de configuración (ejemplo: `frontend/src/config.js`) en lugar de hardcodear en componentes.
+- Verifica siempre con:
+  - `cd frontend && node --check src/App.js`
+  - `cd frontend && npm run build`

@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, Polygon, Marker, Popup, Polyline, useMapEvents
 import L from 'leaflet';
 import axios from 'axios';
 import './App.css';
+import { UI_DEFAULT_PAGES, UI_DEFAULT_WIDGETS, STORAGE_KEYS, WEATHER_CACHE_TTL_MS } from './config';
 
 // Fix for default markers in react-leaflet
 delete L.Icon.Default.prototype._getIconUrl;
@@ -1087,18 +1088,14 @@ const App = () => {
   const [trackingEnabled, setTrackingEnabled] = useState(false);
   const [flightConditions, setFlightConditions] = useState(null);
   const [motionData, setMotionData] = useState({ compassHeading: null, acceleration: null, speedMs: null, barometricAltitude: null, pressureHpa: null });
-  const [pages, setPages] = useState(['Principal']);
-  const [activePage, setActivePage] = useState('Principal');
-  const [widgetConfig, setWidgetConfig] = useState({
-    map: { visible: true, page: 'Principal', x: 16, y: 120, width: 900, height: 580 },
-    weather: { visible: true, page: 'Principal', x: 940, y: 120, width: 360, height: 320 },
-    altimeter: { visible: true, page: 'Principal', x: 940, y: 460, width: 360, height: 240 }
-  });
+  const [pages, setPages] = useState(UI_DEFAULT_PAGES);
+  const [activePage, setActivePage] = useState(UI_DEFAULT_PAGES[0]);
+  const [widgetConfig, setWidgetConfig] = useState(UI_DEFAULT_WIDGETS);
   const [controlsMenuOpen, setControlsMenuOpen] = useState(false);
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const [lastWeatherSnapshot, setLastWeatherSnapshot] = useState(() => {
     try {
-      const raw = localStorage.getItem('lastWeatherSnapshot');
+      const raw = localStorage.getItem(STORAGE_KEYS.lastWeatherSnapshot);
       return raw ? JSON.parse(raw) : null;
     } catch (error) {
       return null;
@@ -1245,8 +1242,14 @@ const App = () => {
     setSensorStatus(status);
   };
 
+  const motionUpdateRaf = useRef(null);
+
   const handleMotionUpdate = (data) => {
-    setMotionData(prev => ({ ...prev, ...data }));
+    if (motionUpdateRaf.current) return;
+    motionUpdateRaf.current = requestAnimationFrame(() => {
+      setMotionData(prev => ({ ...prev, ...data }));
+      motionUpdateRaf.current = null;
+    });
   };
 
 
@@ -1276,7 +1279,10 @@ const App = () => {
       if (!currentPosition) return;
 
       if (!isOnline && lastWeatherSnapshot?.data) {
-        setFlightConditions(lastWeatherSnapshot.data);
+        const snapshotAge = Date.now() - (lastWeatherSnapshot.updatedAt || 0);
+        if (snapshotAge < WEATHER_CACHE_TTL_MS) {
+          setFlightConditions(lastWeatherSnapshot.data);
+        }
         return;
       }
 
@@ -1285,9 +1291,20 @@ const App = () => {
           params: { lat: currentPosition.lat, lng: currentPosition.lng }
         });
         setFlightConditions(response.data);
-        const snapshot = { data: response.data, updatedAt: Date.now() };
+        const minimizedData = {
+          weather_description: response.data.weather_description,
+          temperature_c: response.data.temperature_c,
+          wind_speed_ms: response.data.wind_speed_ms,
+          wind_direction_deg: response.data.wind_direction_deg,
+          visibility_km: response.data.visibility_km,
+          flight_score: response.data.flight_score,
+          recommendation: response.data.recommendation,
+          takeoff_heading_deg: response.data.takeoff_heading_deg,
+          landing_heading_deg: response.data.landing_heading_deg,
+        };
+        const snapshot = { data: minimizedData, updatedAt: Date.now() };
         setLastWeatherSnapshot(snapshot);
-        localStorage.setItem('lastWeatherSnapshot', JSON.stringify(snapshot));
+        localStorage.setItem(STORAGE_KEYS.lastWeatherSnapshot, JSON.stringify(snapshot));
       } catch (error) {
         console.error('Error loading flight conditions:', error);
         if (lastWeatherSnapshot?.data) {
@@ -1297,7 +1314,16 @@ const App = () => {
     };
 
     fetchConditions();
-  }, [currentPosition, isOnline, lastWeatherSnapshot]);
+  }, [currentPosition, isOnline]);
+
+
+  useEffect(() => {
+    return () => {
+      if (motionUpdateRaf.current) {
+        cancelAnimationFrame(motionUpdateRaf.current);
+      }
+    };
+  }, []);
 
   const filteredAirspaces = airspaces.filter(airspace => 
     selectedAirspaceTypes.length === 0 || selectedAirspaceTypes.includes(airspace.type)
