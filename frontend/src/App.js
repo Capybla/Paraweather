@@ -211,7 +211,6 @@ const AirspacePreferences = ({ preferences, onPreferencesChange, isOpen, onToggl
 
 // GPS Position Tracker Component
 const GPSTracker = ({ onPositionUpdate, onSensorStatus, onMotionUpdate }) => {
-  const [watchId, setWatchId] = useState(null);
   const [sensorStatus, setSensorStatus] = useState({
     gps: 'checking',
     barometer: 'checking',
@@ -263,6 +262,7 @@ const GPSTracker = ({ onPositionUpdate, onSensorStatus, onMotionUpdate }) => {
         lat: latitude,
         lng: longitude,
         altitude: altitude || altitudeFromBarometer,
+        altitudeSource: altitude !== null ? 'gps' : (altitudeFromBarometer !== null ? 'barometer' : 'unknown'),
         accuracy: accuracy,
         altitudeAccuracy: altitudeAccuracy,
         speed: position.coords.speed || null,
@@ -286,7 +286,6 @@ const GPSTracker = ({ onPositionUpdate, onSensorStatus, onMotionUpdate }) => {
     };
 
     const id = navigator.geolocation.watchPosition(successCallback, errorCallback, options);
-    setWatchId(id);
 
     // Try to access barometer data if available
     if ('Barometer' in window) {
@@ -297,6 +296,7 @@ const GPSTracker = ({ onPositionUpdate, onSensorStatus, onMotionUpdate }) => {
           const pressure = barometer.pressure;
           const altitude = 44330 * (1 - Math.pow(pressure / 1013.25, 1/5.255));
           altitudeFromBarometer = altitude;
+          onMotionUpdate?.({ barometricAltitude: altitude, pressureHpa: pressure });
         });
         barometer.start();
       } catch (e) {
@@ -591,7 +591,7 @@ const CurrentPositionMarker = ({ position, accuracy }) => {
           <div className="position-popup">
             <h4>📍 Current Position</h4>
             <p><strong>Coordinates:</strong> {position.lat.toFixed(6)}, {position.lng.toFixed(6)}</p>
-            <p><strong>Altitude:</strong> {position.altitude ? `${Math.round(position.altitude)}m` : 'Not available'}</p>
+            <p><strong>Altitude:</strong> {position.altitude ? `${Math.round(position.altitude)}m` : 'Not available'} ({position.altitudeSource || 'unknown'})</p>
             <p><strong>Accuracy:</strong> ±{Math.round(accuracy || 0)}m</p>
             <p><strong>Time:</strong> {new Date(position.timestamp).toLocaleTimeString()}</p>
           </div>
@@ -633,7 +633,7 @@ const SensorWarnings = ({ sensorStatus }) => {
 
 
 
-const FlightConditionsPanel = ({ conditions, sensorStatus, motionData }) => {
+const FlightConditionsPanel = ({ conditions, sensorStatus, motionData, currentPosition }) => {
   if (!conditions) return null;
 
   const recommendationLabel = {
@@ -658,6 +658,12 @@ const FlightConditionsPanel = ({ conditions, sensorStatus, motionData }) => {
       <p><strong>Brújula:</strong> {motionData.compassHeading ? `${Math.round(motionData.compassHeading)}°` : 'No disponible'}</p>
       <p><strong>Velocidad (GPS):</strong> {motionData.speedMs ? `${motionData.speedMs.toFixed(1)} m/s` : 'No disponible'}</p>
       <p><strong>Acelerómetro:</strong> {motionData.acceleration ? `${motionData.acceleration.toFixed(2)} m/s²` : 'No disponible'}</p>
+      <div className="altimeter-card">
+        <h4>🧭 Altímetro</h4>
+        <p><strong>Altitud barométrica:</strong> {motionData.barometricAltitude !== undefined && motionData.barometricAltitude !== null ? `${Math.round(motionData.barometricAltitude)} m` : 'No disponible'}</p>
+        <p><strong>Presión:</strong> {motionData.pressureHpa ? `${motionData.pressureHpa.toFixed(1)} hPa` : 'No disponible'}</p>
+        <p><strong>Altitud navegación:</strong> {currentPosition?.altitude ? `${Math.round(currentPosition.altitude)} m` : 'No disponible'} ({currentPosition?.altitudeSource || 'unknown'})</p>
+      </div>
       <p><strong>Permisos:</strong> GPS {sensorStatus.gps ? '✅' : '❌'} · Barómetro {sensorStatus.barometer ? '✅' : '❌'} · Acelerómetro {sensorStatus.accelerometer ? '✅' : '❌'} · Brújula {sensorStatus.compass ? '✅' : '❌'}</p>
     </div>
   );
@@ -989,7 +995,7 @@ const App = () => {
   const [sensorStatus, setSensorStatus] = useState({ gps: false, barometer: false, accelerometer: false, compass: false });
   const [trackingEnabled, setTrackingEnabled] = useState(false);
   const [flightConditions, setFlightConditions] = useState(null);
-  const [motionData, setMotionData] = useState({ compassHeading: null, acceleration: null, speedMs: null });
+  const [motionData, setMotionData] = useState({ compassHeading: null, acceleration: null, speedMs: null, barometricAltitude: null, pressureHpa: null });
 
   useEffect(() => {
     loadInitialData();
@@ -1208,6 +1214,7 @@ const App = () => {
               conditions={flightConditions}
               sensorStatus={sensorStatus}
               motionData={motionData}
+              currentPosition={currentPosition}
             />
             
             <div className="airspace-controls">
