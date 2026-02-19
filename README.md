@@ -48,6 +48,35 @@ npx cap open android
 Con eso se abre Android Studio para generar el APK/AAB.
 
 
+
+## Export rápido para Android Studio (ZIP)
+
+Para generar un ZIP importable directamente en Android Studio:
+
+```bash
+cd frontend
+npm run apk:zip
+```
+
+Salida esperada:
+
+- `frontend/dist/paraweather-android-studio.zip`
+
+Qué incluye el ZIP:
+
+- Carpeta `android/` lista para abrir en Android Studio
+- `capacitor.config.*`
+- `package.json` y `package-lock.json`
+
+Importación:
+
+1. Descomprime el ZIP.
+2. En Android Studio: **File > Open**.
+3. Selecciona la carpeta descomprimida y abre `android/`.
+4. Espera a que Gradle sincronice y compila APK/AAB desde Android Studio.
+
+> Nota: el script crea/sincroniza Capacitor automáticamente y reconstruye el frontend antes de empaquetar.
+
 ## Modo offline
 
 - La app guarda el último parte meteorológico y lo muestra cuando no hay red.
