@@ -77,6 +77,26 @@ Importación:
 
 > Nota: el script crea/sincroniza Capacitor automáticamente y reconstruye el frontend antes de empaquetar.
 
+## APK compilada en GitHub (automático)
+
+Sí: ahora el repo incluye un workflow de GitHub Actions que compila la APK y la sube a GitHub.
+
+- Archivo: `.github/workflows/android-apk.yml`
+- Evento manual: **Actions > Build Android APK > Run workflow**
+- Evento por release: al crear un tag `v*` (ejemplo: `v1.0.0`) también compila.
+
+Dónde descargar la APK:
+
+1. **Artifacts de Actions**: descarga `paraweather-debug-apk` desde la ejecución.
+2. **Releases**: si disparas con tag `v*`, se adjunta `app-debug.apk` al release.
+
+Comandos recomendados para publicar una APK en Releases:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
 ## Modo offline
 
 - La app guarda el último parte meteorológico y lo muestra cuando no hay red.
