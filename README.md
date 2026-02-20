@@ -98,3 +98,8 @@ Importación:
 - Verifica siempre con:
   - `cd frontend && node --check src/App.js`
   - `cd frontend && npm run build`
+
+## Personalización Open Source
+
+- Puedes definir `REACT_APP_REPO_URL` para que el panel Open Source de la UI apunte a tu repositorio real en GitHub/GitLab.
+- El diseño está pensado para ser profesional y reusable: componentes visuales y configuración separada en `frontend/src/App.js` + `frontend/src/config.js`.

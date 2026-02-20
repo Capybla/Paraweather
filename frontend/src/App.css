@@ -1867,3 +1867,71 @@ body {
     min-height: 58vh;
   }
 }
+
+.brand-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.brand-subtitle {
+  font-size: 0.8rem;
+  opacity: 0.9;
+  font-weight: 500;
+}
+
+.opensource-panel {
+  margin: 0.9rem;
+  padding: 0.9rem;
+  border-radius: 10px;
+  border: 1px solid #ffcc80;
+  background: linear-gradient(180deg, #fff8e1 0%, #fff3e0 100%);
+  color: #5d4037;
+}
+
+.opensource-panel h3 {
+  margin-bottom: 0.5rem;
+  font-size: 1rem;
+}
+
+.opensource-panel p {
+  font-size: 0.85rem;
+  margin-bottom: 0.55rem;
+}
+
+.opensource-panel ul {
+  margin-left: 1rem;
+  font-size: 0.82rem;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.opensource-actions {
+  display: flex;
+  gap: 0.45rem;
+  margin-bottom: 0.6rem;
+}
+
+.oss-link {
+  text-decoration: none;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #fff;
+  background: #fb8c00;
+  border-radius: 999px;
+  padding: 0.25rem 0.7rem;
+}
+
+.oss-link.secondary {
+  background: #6d4c41;
+}
+
+@media (max-width: 1024px) {
+  .brand-subtitle {
+    font-size: 0.72rem;
+  }
+
+  .opensource-panel {
+    margin: 0.6rem;
+  }
+}

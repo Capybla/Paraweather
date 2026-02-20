@@ -15,6 +15,7 @@ L.Icon.Default.mergeOptions({
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || `${window.location.protocol}//${window.location.hostname}:8001`;
 const API = `${BACKEND_URL}/api`;
+const REPO_URL = process.env.REACT_APP_REPO_URL || 'https://github.com';
 
 // Navigation and tracking utilities
 const calculateBearing = (lat1, lng1, lat2, lng2) => {
@@ -1056,6 +1057,23 @@ const RouteDisplay = ({ routes, selectedRoute, onRouteSelect }) => {
   );
 };
 
+
+const OpenSourcePanel = () => (
+  <div className="opensource-panel">
+    <h3>🌍 Open Source</h3>
+    <p>Proyecto colaborativo orientado a vuelo paramotor, con frontend React y backend FastAPI.</p>
+    <div className="opensource-actions">
+      <a href={REPO_URL} target="_blank" rel="noreferrer" className="oss-link">Repositorio</a>
+      <a href="https://capacitorjs.com/docs" target="_blank" rel="noreferrer" className="oss-link secondary">Docs APK</a>
+    </div>
+    <ul>
+      <li>Arquitectura modular para contribuciones.</li>
+      <li>Modo offline con último parte meteorológico.</li>
+      <li>Export ZIP para Android Studio incluido.</li>
+    </ul>
+  </div>
+);
+
 // Main App Component
 const App = () => {
   const [airspaces, setAirspaces] = useState([]);
@@ -1342,7 +1360,7 @@ const App = () => {
   return (
     <div className="app">
       <header className="app-header">
-        <h1>🪂 Paraweather Planner by Capybla & Codex</h1>
+        <div className="brand-block"><h1>🪂 Paraweather Planner by Capybla & Codex</h1><p className="brand-subtitle">Professional Open-Source Flight Planning Suite</p></div>
         <div className="header-stats">
           <span className="stat-item">🌍 {countries.length} Countries</span>
           <span className="stat-item">✈️ {airspaces.length} Airspaces</span>
@@ -1440,6 +1458,7 @@ const App = () => {
               </div>
               <button onClick={() => setSelectedAirspaceTypes([])} className="clear-filters-btn">Clear All Filters</button>
             </div>
+            <OpenSourcePanel />
             <RouteDisplay routes={routes} selectedRoute={selectedRoute} onRouteSelect={setSelectedRoute} />
           </div>
         )}
