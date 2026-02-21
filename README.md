@@ -110,6 +110,22 @@ export GITHUB_REF="main"   # opcional
 npm run apk:trigger:github
 ```
 
+En **Windows PowerShell** usa esto (cada línea por separado):
+
+```powershell
+cd frontend
+$env:GITHUB_TOKEN="<token_con_repo_y_actions>"
+$env:GITHUB_REPO="tu-usuario/tu-repo"
+$env:GITHUB_REF="main"   # opcional
+npm run apk:trigger:github
+```
+
+También puedes lanzarlo en una sola línea en PowerShell:
+
+```powershell
+cd frontend; $env:GITHUB_TOKEN="<token>"; $env:GITHUB_REPO="tu-usuario/tu-repo"; $env:GITHUB_REF="main"; npm run apk:trigger:github
+```
+
 Qué hace:
 
 - Llama a la API de GitHub (`workflow_dispatch`) del workflow `.github/workflows/android-apk.yml`.
