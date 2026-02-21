@@ -97,6 +97,29 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
+
+## Disparar la compilación APK en GitHub desde terminal
+
+Si quieres ejecutarlo ya en GitHub (sin entrar al panel web), usa este script:
+
+```bash
+cd frontend
+export GITHUB_TOKEN="<token_con_repo_y_actions>"
+export GITHUB_REPO="tu-usuario/tu-repo"
+export GITHUB_REF="main"   # opcional
+npm run apk:trigger:github
+```
+
+Qué hace:
+
+- Llama a la API de GitHub (`workflow_dispatch`) del workflow `.github/workflows/android-apk.yml`.
+- Inicia la build en GitHub Actions para generar la APK.
+
+Luego descárgala desde:
+
+- **Actions artifacts**: `paraweather-debug-apk`
+- **Releases** (si disparas por tag `v*`)
+
 ## Modo offline
 
 - La app guarda el último parte meteorológico y lo muestra cuando no hay red.
