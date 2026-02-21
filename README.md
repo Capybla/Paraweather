@@ -44,4 +44,5 @@ npx cap sync android
 npx cap open android
 ```
 
+Github token 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 (expira en 31/1/2027)
 Con eso se abre Android Studio para generar el APK/AAB.
