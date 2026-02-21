@@ -126,10 +126,59 @@ También puedes lanzarlo en una sola línea en PowerShell:
 cd frontend; $env:GITHUB_TOKEN="<token>"; $env:GITHUB_REPO="tu-usuario/tu-repo"; $env:GITHUB_REF="main"; npm run apk:trigger:github
 ```
 
+
+### Problemas comunes en Windows (PowerShell)
+
+Si te aparece:
+
+- `cd : ... \Desktop\frontend no existe`
+- `npm error Missing script: "apk:trigger:github"`
+
+significa que **no estás dentro del repositorio correcto** (o tienes una copia vieja).
+
+Pasos correctos desde cero:
+
+```powershell
+cd $HOME\Desktop
+git clone https://github.com/Capybla/Paraweather.git
+cd Paraweather
+git pull
+cd frontend
+$env:GITHUB_TOKEN="<token_con_repo_y_actions>"
+$env:GITHUB_REPO="Capybla/Paraweather"
+$env:GITHUB_REF="main"
+npm install
+npm run apk:trigger:github
+```
+
+Si ya tienes el repo clonado en otra ruta, entra a esa carpeta primero:
+
+```powershell
+cd "C:\ruta\donde\tengas\Paraweather\frontend"
+npm run
+```
+
+En la salida de `npm run` debe aparecer `apk:trigger:github`.
+
 Qué hace:
 
 - Llama a la API de GitHub (`workflow_dispatch`) del workflow `.github/workflows/android-apk.yml`.
 - Inicia la build en GitHub Actions para generar la APK.
+
+
+Alternativa sin npm (disparo directo de API desde PowerShell):
+
+```powershell
+$headers = @{
+  Authorization = "Bearer $env:GITHUB_TOKEN"
+  Accept = "application/vnd.github+json"
+  "X-GitHub-Api-Version" = "2022-11-28"
+}
+$body = @{ ref = "main" } | ConvertTo-Json
+Invoke-RestMethod -Method POST -Uri "https://api.github.com/repos/Capybla/Paraweather/actions/workflows/android-apk.yml/dispatches" -Headers $headers -Body $body
+```
+
+Si todo va bien, GitHub responde sin contenido (HTTP 204) y la ejecución aparece en Actions.
 
 Luego descárgala desde:
 
