@@ -43,7 +43,7 @@ jobs:
 
       - name: Sync Capacitor Android project
         run: |
-          npx cap add android --no-interactive || true
+          npx cap add android 
           npx cap sync android
 
       - name: Build debug APK
