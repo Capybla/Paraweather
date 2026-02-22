@@ -57,6 +57,32 @@ const speakDirection = (text) => {
 };
 
 // Custom icons for different airspace types
+const normalizeAirspaceCoordinates = (coordinates = []) => {
+  if (!Array.isArray(coordinates)) return [];
+
+  const normalized = coordinates
+    .map((coord) => {
+      const lat = Number(coord?.lat);
+      const lng = Number(coord?.lng);
+      if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        if (Math.abs(lat) <= 90 && Math.abs(lng) <= 180) return [lat, lng];
+        if (Math.abs(lng) <= 90 && Math.abs(lat) <= 180) return [lng, lat];
+      }
+      return null;
+    })
+    .filter(Boolean);
+
+  if (normalized.length > 2) {
+    const [firstLat, firstLng] = normalized[0];
+    const [lastLat, lastLng] = normalized[normalized.length - 1];
+    if (firstLat !== lastLat || firstLng !== lastLng) {
+      normalized.push([firstLat, firstLng]);
+    }
+  }
+
+  return normalized;
+};
+
 const getAirspaceColor = (type) => {
   const colors = {
     'R': '#ff4444', // Restricted - Red
@@ -1347,6 +1373,14 @@ const App = () => {
     selectedAirspaceTypes.length === 0 || selectedAirspaceTypes.includes(airspace.type)
   );
 
+  const normalizedAirspaces = filteredAirspaces
+    .map((airspace, index) => ({
+      ...airspace,
+      normalizedCoordinates: normalizeAirspaceCoordinates(airspace.coordinates),
+      _renderKey: airspace.id || `${airspace.country || 'XX'}-${airspace.type || 'U'}-${airspace.name || 'airspace'}-${index}`
+    }))
+    .filter((airspace) => airspace.normalizedCoordinates.length >= 4);
+
   if (loading) {
     return (
       <div className="loading-screen">
@@ -1373,14 +1407,26 @@ const App = () => {
           <button
             className="controls-menu-button"
             onClick={() => setControlsMenuOpen(!controlsMenuOpen)}
+            aria-label="Abrir o cerrar menú"
           >
             ☰ Menú
           </button>
+          <button
+            onClick={() => { setShowSidebar(!showSidebar); setControlsMenuOpen(false); }}
+            className="quick-sidebar-toggle"
+            aria-label={showSidebar ? 'Ocultar panel lateral' : 'Mostrar panel lateral'}
+          >
+            {showSidebar ? '🟠 Ocultar panel' : '🟢 Mostrar panel'}
+          </button>
           {controlsMenuOpen && (
             <div className="controls-dropdown">
+              <div className="controls-dropdown-header">
+                <span>Acciones rápidas</span>
+                <button className="controls-close-btn" onClick={() => setControlsMenuOpen(false)}>✕</button>
+              </div>
               {selectedRoute && !navigationMode && (
                 <button
-                  onClick={handleStartNavigation}
+                  onClick={() => { handleStartNavigation(); setControlsMenuOpen(false); }}
                   className={`navigation-btn ${sensorStatus.gps ? 'enabled' : 'disabled'}`}
                   disabled={!sensorStatus.gps}
                 >
@@ -1389,22 +1435,22 @@ const App = () => {
               )}
               {navigationMode && (
                 <button
-                  onClick={handleEndNavigation}
+                  onClick={() => { handleEndNavigation(); setControlsMenuOpen(false); }}
                   className="navigation-btn active"
                 >
                   🛑 End Navigation
                 </button>
               )}
               <button
-                onClick={() => setShowSidebar(!showSidebar)}
-                className="sidebar-toggle"
+                onClick={() => { setShowSidebar(!showSidebar); setControlsMenuOpen(false); }}
+                className="sidebar-toggle prominent"
               >
                 {showSidebar ? 'Ocultar panel lateral' : 'Mostrar panel lateral'}
               </button>
-              <button className="add-page-btn" onClick={addPage}>+ Añadir página</button>
+              <button className="add-page-btn" onClick={() => { addPage(); setControlsMenuOpen(false); }}>+ Añadir página</button>
               {!navigationMode && (
                 <button
-                  onClick={() => setIsPlanning(!isPlanning)}
+                  onClick={() => { setIsPlanning(!isPlanning); setControlsMenuOpen(false); }}
                   className={`plan-route-btn ${isPlanning ? 'active' : ''}`}
                 >
                   {isPlanning ? 'Cancel Planning' : 'Plan New Route'}
@@ -1480,16 +1526,17 @@ const App = () => {
                   {currentPosition && (
                     <CurrentPositionMarker position={currentPosition} accuracy={currentPosition.accuracy} />
                   )}
-                  {filteredAirspaces.map(airspace => (
+                  {normalizedAirspaces.map(airspace => (
                     <Polygon
-                      key={airspace.id}
-                      positions={airspace.coordinates.map(coord => [coord.lat, coord.lng])}
+                      key={airspace._renderKey}
+                      positions={airspace.normalizedCoordinates}
+                      pane="overlayPane"
                       pathOptions={{
                         color: getAirspaceColor(airspace.type),
                         fillColor: getAirspaceColor(airspace.type),
                         fillOpacity: navigationMode ? 0.1 : 0.2,
-                        weight: navigationMode ? 1 : 2,
-                        opacity: navigationMode ? 0.6 : 1
+                        weight: navigationMode ? 2 : 3,
+                        opacity: navigationMode ? 0.9 : 1
                       }}
                     >
                       <Popup>

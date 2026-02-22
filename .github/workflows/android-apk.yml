@@ -49,6 +49,9 @@ jobs:
           npx cap add android --no-interactive || true
           npx cap sync android
 
+      - name: Apply Android permissions
+        run: bash ./scripts/apply_android_permissions.sh
+
       - name: Build debug APK
         run: |
           cd android

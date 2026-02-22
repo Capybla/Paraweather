@@ -169,6 +169,32 @@ cd frontend\android
 .\gradlew.bat assembleDebug
 ```
 
+
+### Permisos Android (GPS + barómetro)
+
+Se añadió el script:
+
+- `frontend/scripts/apply_android_permissions.sh`
+
+Este script inyecta en `AndroidManifest.xml` los permisos/feature necesarios para uso de ubicación y sensor barométrico:
+
+- `ACCESS_COARSE_LOCATION`
+- `ACCESS_FINE_LOCATION`
+- `BODY_SENSORS`
+- `uses-feature android.hardware.sensor.barometer`
+
+Se ejecuta automáticamente en:
+
+- `npm run apk:zip`
+- Workflow `.github/workflows/android-apk.yml`
+
+También puedes ejecutarlo manualmente:
+
+```bash
+cd frontend
+npm run apk:permissions
+```
+
 ### Método E — Disparo por terminal (Bash/PowerShell)
 
 Usa `npm run apk:trigger:github` para lanzar la compilación remota (ver sección siguiente con ejemplos completos).

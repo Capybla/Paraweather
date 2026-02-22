@@ -62,7 +62,8 @@
     "test": "craco test",
     "apk:zip": "bash ./scripts/export_android_studio_zip.sh",
     "apk:zip:custom": "bash ./scripts/export_android_studio_zip.sh ./dist/paraweather-android-studio-custom.zip",
-    "apk:trigger:github": "bash ./scripts/trigger_github_apk.sh"
+    "apk:trigger:github": "bash ./scripts/trigger_github_apk.sh",
+    "apk:permissions": "bash ./scripts/apply_android_permissions.sh"
   },
   "browserslist": {
     "production": [

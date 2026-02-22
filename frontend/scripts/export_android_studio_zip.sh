@@ -40,8 +40,11 @@ if [ ! -d android ]; then
   npx cap add android
 fi
 
-echo "[6/6] Sincronizando proyecto Android..."
+echo "[6/7] Sincronizando proyecto Android..."
 npx cap sync android
+
+echo "[7/7] Aplicando permisos Android (GPS/Barómetro)..."
+bash ./scripts/apply_android_permissions.sh
 
 rm -f "$ZIP_PATH"
 
