@@ -98,6 +98,90 @@ git push origin v1.0.0
 ```
 
 
+## Métodos para extraer la APK (detallado)
+
+### Método A — GitHub Actions (recomendado, sin Android Studio local)
+
+1. Ve a **GitHub > Actions > Build Android APK**.
+2. Pulsa **Run workflow** sobre `main`.
+3. Espera a que termine `build-apk`.
+4. Descarga el artifact `paraweather-debug-apk`.
+
+Ventajas:
+- Reproducible para todo el equipo.
+- No depende de tu SDK local.
+
+### Método B — Generar release con APK adjunta
+
+Si creas un tag `v*`, el workflow adjunta automáticamente `app-debug.apk` al release.
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+Luego descarga la APK desde **GitHub > Releases**.
+
+### Método C — Android Studio (local)
+
+```bash
+cd frontend
+npm install
+npm run build
+npx cap add android   # solo la primera vez
+npx cap sync android
+npx cap open android
+```
+
+En Android Studio:
+- **Build > Build Bundle(s) / APK(s) > Build APK(s)**.
+- Ruta típica de salida: `frontend/android/app/build/outputs/apk/debug/app-debug.apk`.
+
+### Método D — ZIP importable para Android Studio
+
+```bash
+cd frontend
+npm run apk:zip
+```
+
+Genera `frontend/dist/paraweather-android-studio.zip` para compartir/importar proyecto Android rápidamente.
+
+### Error común de build local: `Unsupported class file major version 69`
+
+Ese error suele ocurrir cuando Gradle se ejecuta con Java muy nuevo/incompatible.
+
+Solución recomendada (Linux/macOS):
+
+```bash
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+export PATH="$JAVA_HOME/bin:$PATH"
+cd frontend/android
+./gradlew --no-daemon assembleDebug
+```
+
+En Windows PowerShell:
+
+```powershell
+$env:JAVA_HOME="C:\Program Files\Java\jdk-17"
+$env:Path="$env:JAVA_HOME\bin;$env:Path"
+cd frontend\android
+.\gradlew.bat assembleDebug
+```
+
+### Método E — Disparo por terminal (Bash/PowerShell)
+
+Usa `npm run apk:trigger:github` para lanzar la compilación remota (ver sección siguiente con ejemplos completos).
+
+### ¿Se puede dejar la APK directamente dentro del repositorio?
+
+Sí, técnicamente se puede, **pero no es recomendable** para un repo de código:
+
+- Aumenta mucho el peso y el historial de Git.
+- Cada build binaria ensucia los diffs.
+- Es mejor publicar APK en **Releases** o en **Artifacts**.
+
+Si igualmente quieres versionar binarios en Git, usa **Git LFS** y una carpeta dedicada (`artifacts/`), pero para este proyecto se recomienda Releases.
+
 ## Disparar la compilación APK en GitHub desde terminal
 
 Si quieres ejecutarlo ya en GitHub (sin entrar al panel web), usa este script:
