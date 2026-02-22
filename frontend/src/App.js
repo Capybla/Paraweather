@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, Polygon, Marker, Popup, Polyline, useMapEvents
 import L from 'leaflet';
 import axios from 'axios';
 import './App.css';
+import { UI_DEFAULT_PAGES, UI_DEFAULT_WIDGETS, STORAGE_KEYS, WEATHER_CACHE_TTL_MS } from './config';
 
 // Fix for default markers in react-leaflet
 delete L.Icon.Default.prototype._getIconUrl;
@@ -12,8 +13,9 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || `${window.location.protocol}//${window.location.hostname}:8001`;
 const API = `${BACKEND_URL}/api`;
+const REPO_URL = process.env.REACT_APP_REPO_URL || 'https://github.com';
 
 // Navigation and tracking utilities
 const calculateBearing = (lat1, lng1, lat2, lng2) => {
@@ -71,14 +73,18 @@ const getAirspaceColor = (type) => {
 };
 
 // Get route segment color based on segment type
-const getSegmentColor = (segmentType) => {
-  const colors = {
-    'safe': '#00ff00',      // Green - Safe
-    'caution': '#ffaa00',   // Orange - Caution
-    'avoid': '#ff6600',     // Red-Orange - Avoid
-    'restricted': '#ff0000' // Red - Restricted
+const getSegmentColor = (segmentType, altitudeStatus = 'optimal') => {
+  const altitudePalette = {
+    optimal: '#00c853',   // verde: altitud cerca de preferida
+    minimum: '#00b0ff',   // azul: cerca del mínimo configurado
+    high: '#ffab00',      // ámbar: por encima de preferida
+    near_max: '#ff3d00'   // naranja/rojo: cerca del máximo permitido
   };
-  return colors[segmentType] || '#888888';
+
+  if (segmentType === 'restricted') return '#d50000';
+  if (segmentType === 'avoid') return '#ff6d00';
+
+  return altitudePalette[altitudeStatus] || '#888888';
 };
 
 // Country filter component
@@ -110,7 +116,7 @@ const CountryFilter = ({ countries, selectedCountries, onCountryToggle }) => {
 };
 
 // Airspace preferences component
-const AirspacePreferences = ({ preferences, onPreferencesChange, isOpen, onToggle }) => {
+const AirspacePreferences = ({ preferences, onPreferencesChange, isOpen, onToggle, pages, currentPage, onPageChange, onAddPage, widgetConfig, onWidgetConfigChange }) => {
   const handleChange = (field, value) => {
     onPreferencesChange({
       ...preferences,
@@ -136,6 +142,34 @@ const AirspacePreferences = ({ preferences, onPreferencesChange, isOpen, onToggl
       </div>
       
       <div className="preferences-content">
+        <div className="preference-section">
+          <h4>Ajustes generales de visualización</h4>
+          <div className="page-manager">
+            <label>Página activa</label>
+            <select value={currentPage} onChange={(e) => onPageChange(e.target.value)}>
+              {pages.map(page => <option key={`active-${page}`} value={page}>{page}</option>)}
+            </select>
+            <button type="button" className="add-page-btn" onClick={onAddPage}>+ Añadir página</button>
+          </div>
+          {Object.keys(widgetConfig).map(widgetId => (
+            <div key={`pref-${widgetId}`} className="widget-pref-row">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={widgetConfig[widgetId].visible}
+                  onChange={(e) => onWidgetConfigChange(widgetId, { visible: e.target.checked })}
+                />
+                {widgetId === 'map' ? 'Mapa' : widgetId === 'weather' ? 'Tiempo' : 'Altímetro'}
+              </label>
+              <select
+                value={widgetConfig[widgetId].page}
+                onChange={(e) => onWidgetConfigChange(widgetId, { page: e.target.value })}
+              >
+                {pages.map(page => <option key={`${widgetId}-pref-${page}`} value={page}>{page}</option>)}
+              </select>
+            </div>
+          ))}
+        </div>
         <div className="preference-section">
           <h4>Airspace Avoidance</h4>
           <label>
@@ -206,23 +240,29 @@ const AirspacePreferences = ({ preferences, onPreferencesChange, isOpen, onToggl
 };
 
 // GPS Position Tracker Component
-const GPSTracker = ({ onPositionUpdate, onSensorStatus }) => {
-  const [watchId, setWatchId] = useState(null);
+const GPSTracker = ({ onPositionUpdate, onSensorStatus, onMotionUpdate }) => {
   const [sensorStatus, setSensorStatus] = useState({
     gps: 'checking',
     barometer: 'checking',
+    accelerometer: 'checking',
+    compass: 'checking',
+    speed: null,
+    heading: null,
     accuracy: null,
     altitude: null
   });
+  const offlineAlertShownRef = useRef(false);
 
   useEffect(() => {
     let barometerSupported = false;
     let altitudeFromBarometer = null;
+    const hasDeviceOrientation = 'DeviceOrientationEvent' in window;
+    const hasDeviceMotion = 'DeviceMotionEvent' in window;
 
     // Check for GPS availability
     if (!navigator.geolocation) {
       setSensorStatus(prev => ({ ...prev, gps: 'unavailable' }));
-      onSensorStatus({ gps: false, barometer: false });
+      onSensorStatus({ gps: false, barometer: false, accelerometer: false, compass: false });
       return;
     }
 
@@ -253,14 +293,19 @@ const GPSTracker = ({ onPositionUpdate, onSensorStatus }) => {
         lat: latitude,
         lng: longitude,
         altitude: altitude || altitudeFromBarometer,
+        altitudeSource: altitude !== null ? 'gps' : (altitudeFromBarometer !== null ? 'barometer' : 'unknown'),
         accuracy: accuracy,
         altitudeAccuracy: altitudeAccuracy,
+        speed: position.coords.speed || null,
+        heading: position.coords.heading || null,
         timestamp: position.timestamp
       });
 
       onSensorStatus({
         gps: true,
         barometer: altitude !== null || barometerSupported,
+        accelerometer: hasDeviceMotion,
+        compass: hasDeviceOrientation,
         accuracy: accuracy
       });
     };
@@ -268,11 +313,10 @@ const GPSTracker = ({ onPositionUpdate, onSensorStatus }) => {
     const errorCallback = (error) => {
       console.warn('GPS Error:', error);
       setSensorStatus(prev => ({ ...prev, gps: 'denied' }));
-      onSensorStatus({ gps: false, barometer: barometerSupported });
+      onSensorStatus({ gps: false, barometer: barometerSupported, accelerometer: hasDeviceMotion, compass: hasDeviceOrientation });
     };
 
     const id = navigator.geolocation.watchPosition(successCallback, errorCallback, options);
-    setWatchId(id);
 
     // Try to access barometer data if available
     if ('Barometer' in window) {
@@ -283,6 +327,7 @@ const GPSTracker = ({ onPositionUpdate, onSensorStatus }) => {
           const pressure = barometer.pressure;
           const altitude = 44330 * (1 - Math.pow(pressure / 1013.25, 1/5.255));
           altitudeFromBarometer = altitude;
+          onMotionUpdate?.({ barometricAltitude: altitude, pressureHpa: pressure });
         });
         barometer.start();
       } catch (e) {
@@ -290,12 +335,58 @@ const GPSTracker = ({ onPositionUpdate, onSensorStatus }) => {
       }
     }
 
+
+    const requestableMotion = typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function';
+    const requestableOrientation = typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function';
+
+    const handleOrientation = (event) => {
+      if (event.alpha !== null && event.alpha !== undefined) {
+        onMotionUpdate?.({ compassHeading: event.alpha });
+      }
+    };
+
+    const handleMotion = (event) => {
+      const acc = event.accelerationIncludingGravity || event.acceleration;
+      if (acc) {
+        const magnitude = Math.sqrt((acc.x || 0) ** 2 + (acc.y || 0) ** 2 + (acc.z || 0) ** 2);
+        onMotionUpdate?.({ acceleration: magnitude });
+      }
+    };
+
+    const setupSensors = async () => {
+      try {
+        if (requestableOrientation) {
+          await DeviceOrientationEvent.requestPermission();
+        }
+        if (requestableMotion) {
+          await DeviceMotionEvent.requestPermission();
+        }
+      } catch (err) {
+        console.warn('Motion/orientation permission not granted:', err);
+      }
+
+      if (hasDeviceOrientation) {
+        window.addEventListener('deviceorientation', handleOrientation);
+      }
+      if (hasDeviceMotion) {
+        window.addEventListener('devicemotion', handleMotion);
+      }
+    };
+
+    setupSensors();
+
     return () => {
       if (id) {
         navigator.geolocation.clearWatch(id);
       }
+      if (hasDeviceOrientation) {
+        window.removeEventListener('deviceorientation', handleOrientation);
+      }
+      if (hasDeviceMotion) {
+        window.removeEventListener('devicemotion', handleMotion);
+      }
     };
-  }, [onPositionUpdate, onSensorStatus]);
+  }, [onPositionUpdate, onSensorStatus, onMotionUpdate]);
 
   return null; // This component doesn't render anything
 };
@@ -531,7 +622,7 @@ const CurrentPositionMarker = ({ position, accuracy }) => {
           <div className="position-popup">
             <h4>📍 Current Position</h4>
             <p><strong>Coordinates:</strong> {position.lat.toFixed(6)}, {position.lng.toFixed(6)}</p>
-            <p><strong>Altitude:</strong> {position.altitude ? `${Math.round(position.altitude)}m` : 'Not available'}</p>
+            <p><strong>Altitude:</strong> {position.altitude ? `${Math.round(position.altitude)}m` : 'Not available'} ({position.altitudeSource || 'unknown'})</p>
             <p><strong>Accuracy:</strong> ±{Math.round(accuracy || 0)}m</p>
             <p><strong>Time:</strong> {new Date(position.timestamp).toLocaleTimeString()}</p>
           </div>
@@ -571,6 +662,106 @@ const SensorWarnings = ({ sensorStatus }) => {
   );
 };
 
+
+
+
+const NetworkStatusBanner = ({ isOnline, weatherFromCache, weatherUpdatedAt }) => {
+  if (isOnline) return null;
+  return (
+    <div className="network-alert">
+      <strong>⚠️ Sin conexión de red.</strong> Modo offline activo con GPS y datos guardados.
+      {weatherFromCache && weatherUpdatedAt && (
+        <span> Último parte meteo: {new Date(weatherUpdatedAt).toLocaleTimeString()}.</span>
+      )}
+    </div>
+  );
+};
+
+const recommendationLabel = {
+  recommended: '✅ Recomendado volar',
+  caution: '⚠️ Volar con precaución',
+  not_recommended: '⛔ No recomendado volar'
+};
+
+const DraggableWidget = ({ id, title, children, config, onUpdate }) => {
+  const [dragging, setDragging] = useState(false);
+  const dragRef = useRef({ offsetX: 0, offsetY: 0 });
+
+  useEffect(() => {
+    const handleMove = (event) => {
+      if (!dragging) return;
+      onUpdate(id, {
+        x: Math.max(0, event.clientX - dragRef.current.offsetX),
+        y: Math.max(70, event.clientY - dragRef.current.offsetY)
+      });
+    };
+
+    const handleUp = () => setDragging(false);
+
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleUp);
+    };
+  }, [dragging, id, onUpdate]);
+
+  const startDrag = (event) => {
+    setDragging(true);
+    dragRef.current = {
+      offsetX: event.clientX - config.x,
+      offsetY: event.clientY - config.y
+    };
+  };
+
+  return (
+    <div
+      className={`widget-card ${dragging ? 'dragging' : ''}`}
+      style={{ left: config.x, top: config.y, width: config.width, height: config.height }}
+    >
+      <div className="widget-header" onMouseDown={startDrag}>
+        <h3>{title}</h3>
+        <span className="widget-hint">Arrastra + redimensiona ↘</span>
+      </div>
+      <div className="widget-body">{children}</div>
+    </div>
+  );
+};
+
+const WeatherWidget = ({ conditions, sensorStatus, motionData }) => {
+  if (!conditions) {
+    return <p>Cargando condiciones meteorológicas...</p>;
+  }
+
+  return (
+    <div className="widget-content-list">
+      <p><strong>Tiempo:</strong> {conditions.weather_description} · {conditions.temperature_c.toFixed(1)}°C</p>
+      <p><strong>Viento:</strong> {conditions.wind_speed_ms.toFixed(1)} m/s ({Math.round(conditions.wind_direction_deg)}°)</p>
+      <p><strong>Visibilidad:</strong> {conditions.visibility_km.toFixed(1)} km</p>
+      <p><strong>Escala vuelo:</strong> {conditions.flight_score}/100</p>
+      <p><strong>Estado:</strong> {recommendationLabel[conditions.recommendation] || conditions.recommendation}</p>
+      <p><strong>Despegue óptimo:</strong> {Math.round(conditions.takeoff_heading_deg)}°</p>
+      <p><strong>Aterrizaje óptimo:</strong> {Math.round(conditions.landing_heading_deg)}°</p>
+      <div className="mini-compass">
+        <div className="mini-compass-arrow" style={{ transform: `rotate(${motionData.compassHeading || conditions.wind_direction_deg}deg)` }} />
+      </div>
+      <p><strong>Brújula:</strong> {motionData.compassHeading ? `${Math.round(motionData.compassHeading)}°` : 'No disponible'}</p>
+      <p><strong>Permisos:</strong> GPS {sensorStatus.gps ? '✅' : '❌'} · Brújula {sensorStatus.compass ? '✅' : '❌'}</p>
+    </div>
+  );
+};
+
+const AltimeterWidget = ({ motionData, currentPosition, sensorStatus }) => (
+  <div className="widget-content-list">
+    <p><strong>Altitud barométrica:</strong> {motionData.barometricAltitude !== undefined && motionData.barometricAltitude !== null ? `${Math.round(motionData.barometricAltitude)} m` : 'No disponible'}</p>
+    <p><strong>Presión:</strong> {motionData.pressureHpa ? `${motionData.pressureHpa.toFixed(1)} hPa` : 'No disponible'}</p>
+    <p><strong>Altitud navegación:</strong> {currentPosition?.altitude ? `${Math.round(currentPosition.altitude)} m` : 'No disponible'} ({currentPosition?.altitudeSource || 'unknown'})</p>
+    <p><strong>Velocidad GPS:</strong> {motionData.speedMs ? `${motionData.speedMs.toFixed(1)} m/s` : 'No disponible'}</p>
+    <p><strong>Acelerómetro:</strong> {motionData.acceleration ? `${motionData.acceleration.toFixed(2)} m/s²` : 'No disponible'}</p>
+    <p><strong>Sensores:</strong> Barómetro {sensorStatus.barometer ? '✅' : '❌'} · Acelerómetro {sensorStatus.accelerometer ? '✅' : '❌'}</p>
+  </div>
+);
+
 // Route segments visualization component
 const RouteSegments = ({ route }) => {
   if (!route || !route.route_segments || route.route_segments.length === 0) {
@@ -590,7 +781,7 @@ const RouteSegments = ({ route }) => {
             key={index}
             positions={positions}
             pathOptions={{
-              color: getSegmentColor(segment.segment_type),
+              color: getSegmentColor(segment.segment_type, segment.altitude_status),
               weight: 4,
               opacity: 0.8
             }}
@@ -601,6 +792,7 @@ const RouteSegments = ({ route }) => {
                 <p><strong>Distance:</strong> {segment.distance.toFixed(1)} km</p>
                 <p><strong>Altitude:</strong> {segment.altitude}m AGL</p>
                 <p><strong>Status:</strong> {segment.segment_type.toUpperCase()}</p>
+                <p><strong>Altitude profile:</strong> {(segment.altitude_status || 'optimal').toUpperCase()}</p>
                 {segment.airspace_warnings.length > 0 && (
                   <div className="segment-warnings">
                     <strong>Warnings:</strong>
@@ -842,8 +1034,8 @@ const RouteDisplay = ({ routes, selectedRoute, onRouteSelect }) => {
                   <span 
                     key={idx}
                     className="segment-indicator"
-                    style={{ backgroundColor: getSegmentColor(segment.segment_type) }}
-                    title={`Segment ${idx + 1}: ${segment.segment_type} (${segment.altitude}m)`}
+                    style={{ backgroundColor: getSegmentColor(segment.segment_type, segment.altitude_status) }}
+                    title={`Segment ${idx + 1}: ${segment.segment_type} / ${segment.altitude_status || 'optimal'} (${segment.altitude}m)`}
                   ></span>
                 ))}
               </div>
@@ -864,6 +1056,23 @@ const RouteDisplay = ({ routes, selectedRoute, onRouteSelect }) => {
     </div>
   );
 };
+
+
+const OpenSourcePanel = () => (
+  <div className="opensource-panel">
+    <h3>🌍 Open Source</h3>
+    <p>Proyecto colaborativo orientado a vuelo paramotor, con frontend React y backend FastAPI.</p>
+    <div className="opensource-actions">
+      <a href={REPO_URL} target="_blank" rel="noreferrer" className="oss-link">Repositorio</a>
+      <a href="https://capacitorjs.com/docs" target="_blank" rel="noreferrer" className="oss-link secondary">Docs APK</a>
+    </div>
+    <ul>
+      <li>Arquitectura modular para contribuciones.</li>
+      <li>Modo offline con último parte meteorológico.</li>
+      <li>Export ZIP para Android Studio incluido.</li>
+    </ul>
+  </div>
+);
 
 // Main App Component
 const App = () => {
@@ -893,8 +1102,24 @@ const App = () => {
   // Navigation mode states
   const [navigationMode, setNavigationMode] = useState(false);
   const [currentPosition, setCurrentPosition] = useState(null);
-  const [sensorStatus, setSensorStatus] = useState({ gps: false, barometer: false });
+  const [sensorStatus, setSensorStatus] = useState({ gps: false, barometer: false, accelerometer: false, compass: false });
   const [trackingEnabled, setTrackingEnabled] = useState(false);
+  const [flightConditions, setFlightConditions] = useState(null);
+  const [motionData, setMotionData] = useState({ compassHeading: null, acceleration: null, speedMs: null, barometricAltitude: null, pressureHpa: null });
+  const [pages, setPages] = useState(UI_DEFAULT_PAGES);
+  const [activePage, setActivePage] = useState(UI_DEFAULT_PAGES[0]);
+  const [widgetConfig, setWidgetConfig] = useState(UI_DEFAULT_WIDGETS);
+  const [controlsMenuOpen, setControlsMenuOpen] = useState(false);
+  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [lastWeatherSnapshot, setLastWeatherSnapshot] = useState(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.lastWeatherSnapshot);
+      return raw ? JSON.parse(raw) : null;
+    } catch (error) {
+      return null;
+    }
+  });
+  const offlineAlertShownRef = useRef(false);
 
   useEffect(() => {
     loadInitialData();
@@ -904,6 +1129,29 @@ const App = () => {
     // Reload airspaces when country selection changes
     loadAirspaces();
   }, [selectedCountries]);
+
+
+  useEffect(() => {
+    const goOnline = () => setIsOnline(true);
+    const goOffline = () => setIsOnline(false);
+    window.addEventListener('online', goOnline);
+    window.addEventListener('offline', goOffline);
+    return () => {
+      window.removeEventListener('online', goOnline);
+      window.removeEventListener('offline', goOffline);
+    };
+  }, []);
+
+
+  useEffect(() => {
+    if (!isOnline && !offlineAlertShownRef.current) {
+      alert('Sin conexión de red. La app seguirá funcionando con GPS y últimos datos meteorológicos guardados.');
+      offlineAlertShownRef.current = true;
+    }
+    if (isOnline) {
+      offlineAlertShownRef.current = false;
+    }
+  }, [isOnline]);
 
   const loadInitialData = async () => {
     try {
@@ -1001,6 +1249,7 @@ const App = () => {
 
   const handlePositionUpdate = (position) => {
     setCurrentPosition(position);
+    setMotionData(prev => ({ ...prev, speedMs: position.speed || prev.speedMs }));
     if (navigationMode) {
       // Center map on current position during navigation
       setMapCenter([position.lat, position.lng]);
@@ -1010,6 +1259,89 @@ const App = () => {
   const handleSensorStatus = (status) => {
     setSensorStatus(status);
   };
+
+  const motionUpdateRaf = useRef(null);
+
+  const handleMotionUpdate = (data) => {
+    if (motionUpdateRaf.current) return;
+    motionUpdateRaf.current = requestAnimationFrame(() => {
+      setMotionData(prev => ({ ...prev, ...data }));
+      motionUpdateRaf.current = null;
+    });
+  };
+
+
+  const addPage = () => {
+    const nextName = `Página ${pages.length + 1}`;
+    setPages(prev => [...prev, nextName]);
+    setActivePage(nextName);
+  };
+
+  const updateWidgetConfig = (widgetId, partial) => {
+    setWidgetConfig(prev => ({
+      ...prev,
+      [widgetId]: {
+        ...prev[widgetId],
+        ...partial
+      }
+    }));
+  };
+
+  const visibleOnPage = (widgetId) => {
+    const cfg = widgetConfig[widgetId];
+    return cfg.visible && cfg.page === activePage;
+  };
+
+  useEffect(() => {
+    const fetchConditions = async () => {
+      if (!currentPosition) return;
+
+      if (!isOnline && lastWeatherSnapshot?.data) {
+        const snapshotAge = Date.now() - (lastWeatherSnapshot.updatedAt || 0);
+        if (snapshotAge < WEATHER_CACHE_TTL_MS) {
+          setFlightConditions(lastWeatherSnapshot.data);
+        }
+        return;
+      }
+
+      try {
+        const response = await axios.get(`${API}/conditions`, {
+          params: { lat: currentPosition.lat, lng: currentPosition.lng }
+        });
+        setFlightConditions(response.data);
+        const minimizedData = {
+          weather_description: response.data.weather_description,
+          temperature_c: response.data.temperature_c,
+          wind_speed_ms: response.data.wind_speed_ms,
+          wind_direction_deg: response.data.wind_direction_deg,
+          visibility_km: response.data.visibility_km,
+          flight_score: response.data.flight_score,
+          recommendation: response.data.recommendation,
+          takeoff_heading_deg: response.data.takeoff_heading_deg,
+          landing_heading_deg: response.data.landing_heading_deg,
+        };
+        const snapshot = { data: minimizedData, updatedAt: Date.now() };
+        setLastWeatherSnapshot(snapshot);
+        localStorage.setItem(STORAGE_KEYS.lastWeatherSnapshot, JSON.stringify(snapshot));
+      } catch (error) {
+        console.error('Error loading flight conditions:', error);
+        if (lastWeatherSnapshot?.data) {
+          setFlightConditions(lastWeatherSnapshot.data);
+        }
+      }
+    };
+
+    fetchConditions();
+  }, [currentPosition, isOnline]);
+
+
+  useEffect(() => {
+    return () => {
+      if (motionUpdateRaf.current) {
+        cancelAnimationFrame(motionUpdateRaf.current);
+      }
+    };
+  }, []);
 
   const filteredAirspaces = airspaces.filter(airspace => 
     selectedAirspaceTypes.length === 0 || selectedAirspaceTypes.includes(airspace.type)
@@ -1028,7 +1360,7 @@ const App = () => {
   return (
     <div className="app">
       <header className="app-header">
-        <h1>🪂 European Paramotorist Flight Planner</h1>
+        <div className="brand-block"><h1>🪂 Paraweather Planner by Capybla & Codex</h1><p className="brand-subtitle">Professional Open-Source Flight Planning Suite</p></div>
         <div className="header-stats">
           <span className="stat-item">🌍 {countries.length} Countries</span>
           <span className="stat-item">✈️ {airspaces.length} Airspaces</span>
@@ -1038,41 +1370,57 @@ const App = () => {
           )}
         </div>
         <div className="header-controls">
-          {selectedRoute && !navigationMode && (
-            <button 
-              onClick={handleStartNavigation}
-              className={`navigation-btn ${sensorStatus.gps ? 'enabled' : 'disabled'}`}
-              disabled={!sensorStatus.gps}
-            >
-              🧭 Start Navigation
-            </button>
-          )}
-          {navigationMode && (
-            <button 
-              onClick={handleEndNavigation}
-              className="navigation-btn active"
-            >
-              🛑 End Navigation
-            </button>
-          )}
-          <button 
-            onClick={() => setShowSidebar(!showSidebar)}
-            className="sidebar-toggle"
+          <button
+            className="controls-menu-button"
+            onClick={() => setControlsMenuOpen(!controlsMenuOpen)}
           >
-            {showSidebar ? '◀' : '▶'}
+            ☰ Menú
           </button>
-          {!navigationMode && (
-            <button 
-              onClick={() => setIsPlanning(!isPlanning)}
-              className={`plan-route-btn ${isPlanning ? 'active' : ''}`}
-            >
-              {isPlanning ? 'Cancel Planning' : 'Plan New Route'}
-            </button>
+          {controlsMenuOpen && (
+            <div className="controls-dropdown">
+              {selectedRoute && !navigationMode && (
+                <button
+                  onClick={handleStartNavigation}
+                  className={`navigation-btn ${sensorStatus.gps ? 'enabled' : 'disabled'}`}
+                  disabled={!sensorStatus.gps}
+                >
+                  🧭 Start Navigation
+                </button>
+              )}
+              {navigationMode && (
+                <button
+                  onClick={handleEndNavigation}
+                  className="navigation-btn active"
+                >
+                  🛑 End Navigation
+                </button>
+              )}
+              <button
+                onClick={() => setShowSidebar(!showSidebar)}
+                className="sidebar-toggle"
+              >
+                {showSidebar ? 'Ocultar panel lateral' : 'Mostrar panel lateral'}
+              </button>
+              <button className="add-page-btn" onClick={addPage}>+ Añadir página</button>
+              {!navigationMode && (
+                <button
+                  onClick={() => setIsPlanning(!isPlanning)}
+                  className={`plan-route-btn ${isPlanning ? 'active' : ''}`}
+                >
+                  {isPlanning ? 'Cancel Planning' : 'Plan New Route'}
+                </button>
+              )}
+            </div>
           )}
         </div>
       </header>
 
-      <div className="app-content">
+      <div className="app-content warm-theme">
+        <NetworkStatusBanner
+          isOnline={isOnline}
+          weatherFromCache={Boolean(lastWeatherSnapshot?.data)}
+          weatherUpdatedAt={lastWeatherSnapshot?.updatedAt}
+        />
         {showSidebar && (
           <div className="sidebar">
             <AirspacePreferences
@@ -1080,14 +1428,18 @@ const App = () => {
               onPreferencesChange={setAirspacePreferences}
               isOpen={preferencesOpen}
               onToggle={() => setPreferencesOpen(!preferencesOpen)}
+              pages={pages}
+              currentPage={activePage}
+              onPageChange={setActivePage}
+              onAddPage={addPage}
+              widgetConfig={widgetConfig}
+              onWidgetConfigChange={updateWidgetConfig}
             />
-            
             <CountryFilter
               countries={countries}
               selectedCountries={selectedCountries}
               onCountryToggle={handleCountryToggle}
             />
-            
             <div className="airspace-controls">
               <h3>Airspace Filters</h3>
               <div className="airspace-types">
@@ -1098,127 +1450,90 @@ const App = () => {
                       checked={selectedAirspaceTypes.includes(type.code)}
                       onChange={() => toggleAirspaceType(type.code)}
                     />
-                    <span 
-                      className="airspace-color-indicator"
-                      style={{ backgroundColor: getAirspaceColor(type.code) }}
-                    ></span>
+                    <span className="airspace-color-indicator" style={{ backgroundColor: getAirspaceColor(type.code) }}></span>
                     {type.code} - {type.name}
                     {!type.avoidable && <span className="unavoidable">⚠️</span>}
                   </label>
                 ))}
               </div>
-              <button 
-                onClick={() => setSelectedAirspaceTypes([])}
-                className="clear-filters-btn"
-              >
-                Clear All Filters
-              </button>
+              <button onClick={() => setSelectedAirspaceTypes([])} className="clear-filters-btn">Clear All Filters</button>
             </div>
-
-            <RouteDisplay 
-              routes={routes}
-              selectedRoute={selectedRoute}
-              onRouteSelect={setSelectedRoute}
-            />
+            <OpenSourcePanel />
+            <RouteDisplay routes={routes} selectedRoute={selectedRoute} onRouteSelect={setSelectedRoute} />
           </div>
         )}
 
-        <div className="map-container">
-          {/* Sensor warnings */}
-          <SensorWarnings sensorStatus={sensorStatus} />
-          
-          {/* Navigation panel */}
-          {navigationMode && selectedRoute && (
-            <NavigationMode 
-              route={selectedRoute}
-              currentPosition={currentPosition}
-              onNavigationEnd={handleEndNavigation}
-            />
+        <div className="widget-canvas">
+          {visibleOnPage('map') && (
+            <DraggableWidget id="map" title="🗺️ Mapa de vuelo" config={widgetConfig.map} onUpdate={updateWidgetConfig}>
+              <div className="map-widget-inner">
+                <SensorWarnings sensorStatus={sensorStatus} />
+                {navigationMode && selectedRoute && (
+                  <NavigationMode route={selectedRoute} currentPosition={currentPosition} onNavigationEnd={handleEndNavigation} />
+                )}
+                <MapContainer center={mapCenter} zoom={navigationMode ? 15 : 5} className="leaflet-map">
+                  <TileLayer
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                  />
+                  <GPSTracker onPositionUpdate={handlePositionUpdate} onSensorStatus={handleSensorStatus} onMotionUpdate={handleMotionUpdate} />
+                  {currentPosition && (
+                    <CurrentPositionMarker position={currentPosition} accuracy={currentPosition.accuracy} />
+                  )}
+                  {filteredAirspaces.map(airspace => (
+                    <Polygon
+                      key={airspace.id}
+                      positions={airspace.coordinates.map(coord => [coord.lat, coord.lng])}
+                      pathOptions={{
+                        color: getAirspaceColor(airspace.type),
+                        fillColor: getAirspaceColor(airspace.type),
+                        fillOpacity: navigationMode ? 0.1 : 0.2,
+                        weight: navigationMode ? 1 : 2,
+                        opacity: navigationMode ? 0.6 : 1
+                      }}
+                    >
+                      <Popup>
+                        <div className="airspace-popup">
+                          <h4>{airspace.name}</h4>
+                          <p><strong>Country:</strong> {airspace.country} {countries.find(c => c.code === airspace.country)?.flag}</p>
+                          <p><strong>Type:</strong> {airspace.type}</p>
+                          {airspace.floor && <p><strong>Floor:</strong> {airspace.floor}</p>}
+                          {airspace.ceiling && <p><strong>Ceiling:</strong> {airspace.ceiling}</p>}
+                        </div>
+                      </Popup>
+                    </Polygon>
+                  ))}
+                  {selectedRoute && <RouteSegments route={selectedRoute} />}
+                  {selectedRoute && selectedRoute.waypoints && selectedRoute.waypoints.map((waypoint, index) => (
+                    <Marker key={`waypoint-${index}`} position={[waypoint.lat, waypoint.lng]}>
+                      <Popup><div><strong>{waypoint.waypoint_name || `Waypoint ${index + 1}`}</strong></div></Popup>
+                    </Marker>
+                  ))}
+                  {!navigationMode && (
+                    <RoutePlanner
+                      onRouteCreate={handleRouteCreate}
+                      isPlanning={isPlanning}
+                      setIsPlanning={setIsPlanning}
+                      airspacePreferences={airspacePreferences}
+                      onPreferencesChange={setAirspacePreferences}
+                    />
+                  )}
+                </MapContainer>
+              </div>
+            </DraggableWidget>
           )}
 
-          <MapContainer 
-            center={mapCenter} 
-            zoom={navigationMode ? 15 : 5} 
-            className="leaflet-map"
-          >
-            <TileLayer
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            />
-            
-            {/* GPS Tracker - always active */}
-            <GPSTracker 
-              onPositionUpdate={handlePositionUpdate}
-              onSensorStatus={handleSensorStatus}
-            />
+          {visibleOnPage('weather') && (
+            <DraggableWidget id="weather" title="🌤️ Tiempo y recomendación" config={widgetConfig.weather} onUpdate={updateWidgetConfig}>
+              <WeatherWidget conditions={flightConditions} sensorStatus={sensorStatus} motionData={motionData} />
+            </DraggableWidget>
+          )}
 
-            {/* Current position marker */}
-            {currentPosition && (
-              <CurrentPositionMarker 
-                position={currentPosition}
-                accuracy={currentPosition.accuracy}
-              />
-            )}
-            
-            {/* Render airspaces (reduced opacity during navigation) */}
-            {filteredAirspaces.map(airspace => (
-              <Polygon
-                key={airspace.id}
-                positions={airspace.coordinates.map(coord => [coord.lat, coord.lng])}
-                pathOptions={{
-                  color: getAirspaceColor(airspace.type),
-                  fillColor: getAirspaceColor(airspace.type),
-                  fillOpacity: navigationMode ? 0.1 : 0.2,
-                  weight: navigationMode ? 1 : 2,
-                  opacity: navigationMode ? 0.6 : 1
-                }}
-              >
-                <Popup>
-                  <div className="airspace-popup">
-                    <h4>{airspace.name}</h4>
-                    <p><strong>Country:</strong> {airspace.country} {countries.find(c => c.code === airspace.country)?.flag}</p>
-                    <p><strong>Type:</strong> {airspace.type}</p>
-                    {airspace.floor && <p><strong>Floor:</strong> {airspace.floor}</p>}
-                    {airspace.ceiling && <p><strong>Ceiling:</strong> {airspace.ceiling}</p>}
-                    {airspace.frequency && <p><strong>Frequency:</strong> {airspace.frequency}</p>}
-                    {airspace.requirements && airspace.requirements.length > 0 && (
-                      <div className="requirements">
-                        <strong>Requirements:</strong>
-                        {airspace.requirements.map((req, idx) => (
-                          <p key={idx} className="requirement">{req}</p>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </Popup>
-              </Polygon>
-            ))}
-
-            {/* Render selected route with segments (highlighted during navigation) */}
-            {selectedRoute && <RouteSegments route={selectedRoute} />}
-
-            {/* Render route waypoints */}
-            {selectedRoute && selectedRoute.waypoints && selectedRoute.waypoints.map((waypoint, index) => (
-              <Marker key={`waypoint-${index}`} position={[waypoint.lat, waypoint.lng]}>
-                <Popup>
-                  <div>
-                    <strong>{waypoint.waypoint_name || `Waypoint ${index + 1}`}</strong>
-                    {waypoint.altitude && <p>Altitude: {waypoint.altitude}m AGL</p>}
-                  </div>
-                </Popup>
-              </Marker>
-            ))}
-
-            {!navigationMode && (
-              <RoutePlanner 
-                onRouteCreate={handleRouteCreate}
-                isPlanning={isPlanning}
-                setIsPlanning={setIsPlanning}
-                airspacePreferences={airspacePreferences}
-                onPreferencesChange={setAirspacePreferences}
-              />
-            )}
-          </MapContainer>
+          {visibleOnPage('altimeter') && (
+            <DraggableWidget id="altimeter" title="🧭 Altímetro" config={widgetConfig.altimeter} onUpdate={updateWidgetConfig}>
+              <AltimeterWidget motionData={motionData} currentPosition={currentPosition} sensorStatus={sensorStatus} />
+            </DraggableWidget>
+          )}
         </div>
       </div>
     </div>
