@@ -1,0 +1,10 @@
+{
+  "name": "Paraweather",
+  "short_name": "Paraweather",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#0b1a34",
+  "theme_color": "#0b1a34",
+  "description": "Paragliding weather and route planning app",
+  "icons": []
+}
