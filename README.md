@@ -11,6 +11,9 @@ Aplicación con frontend en React y backend en FastAPI.
 
 ## Ejecutar backend
 
+Variables recomendadas:
+- `AEMET_API_KEY`: API key de AEMET (si no está definida, el backend usa Open-Meteo como fallback automático para `/api/conditions`).
+
 ```bash
 cd backend
 pip install -r requirements.txt
