@@ -25,7 +25,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '22.x'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
@@ -46,11 +46,8 @@ jobs:
 
       - name: Sync Capacitor Android project
         run: |
-          npx cap add android
+          npx cap add android 
           npx cap sync android
-
-      - name: Apply Android permissions
-        run: bash ./scripts/apply_android_permissions.sh
 
       - name: Build debug APK
         run: |

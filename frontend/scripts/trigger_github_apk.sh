@@ -7,6 +7,9 @@ set -euo pipefail
 # Optional:
 #   GITHUB_REPO   -> owner/repo (auto-detect from git remote origin if omitted)
 #   GITHUB_REF    -> git ref to build (auto-detect current branch if omitted)
+#   GITHUB_REPO   -> owner/repo (example: capybla/paraweather)
+# Optional:
+#   GITHUB_REF    -> git ref to build (default: main)
 #   WORKFLOW_FILE -> workflow filename (default: android-apk.yml)
 
 if ! command -v curl >/dev/null 2>&1; then
@@ -33,6 +36,11 @@ if [[ -z "${GITHUB_REF:-}" ]]; then
     GITHUB_REF="main"
   fi
 fi
+
+: "${GITHUB_REPO:?Falta GITHUB_REPO con formato owner/repo.}"
+
+GITHUB_REF="${GITHUB_REF:-main}"
+WORKFLOW_FILE="${WORKFLOW_FILE:-android-apk.yml}"
 
 API_URL="https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/${WORKFLOW_FILE}/dispatches"
 

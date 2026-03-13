@@ -1815,10 +1815,61 @@ async def get_flight_conditions(lat: float, lng: float):
             "&current=temperature_2m,weather_code,wind_speed_10m,wind_direction_10m,visibility"
         )
         async with httpx.AsyncClient(timeout=10) as client:
+            # Primary source: AEMET observations from nearest station
+            if AEMET_API_KEY:
+                try:
+                    stations = await get_aemet_stations(client)
+                    if stations:
+                        nearest_station = min(
+                            stations,
+                            key=lambda station: haversine_distance(lat, lng, station["lat"], station["lng"])
+                        )
+                        station_id = nearest_station.get("indicativo")
+                        if station_id:
+                            observation_list = await fetch_aemet_dataset(
+                                f"/observacion/convencional/datos/estacion/{station_id}",
+                                client
+                            )
+                            if isinstance(observation_list, list) and observation_list:
+                                return parse_aemet_observation(observation_list[0], lat, lng)
+                except Exception as aemet_error:
+                    logger.warning(f"AEMET unavailable, falling back to Open-Meteo: {aemet_error}")
+            else:
+                logger.info("AEMET_API_KEY not configured. Using Open-Meteo fallback for /api/conditions")
+
+            # Fallback source: Open-Meteo
+            weather_url = (
+                "https://api.open-meteo.com/v1/forecast"
+                f"?latitude={lat}&longitude={lng}"
+                "&current=temperature_2m,weather_code,wind_speed_10m,wind_direction_10m,visibility"
+            )
+    weather_code = 0
+    temperature_c = 20.0
+    wind_speed = 4.0
+    wind_direction = 0.0
+    visibility_km = 10.0
+
+    try:
+        weather_url = (
+            "https://api.open-meteo.com/v1/forecast"
+            f"?latitude={lat}&longitude={lng}"
+            "&current=temperature_2m,weather_code,wind_speed_10m,wind_direction_10m,visibility"
+        )
+        async with httpx.AsyncClient(timeout=10) as client:
             response = await client.get(weather_url)
             response.raise_for_status()
             payload = response.json()
 
+        current = payload.get("current", {})
+        temperature_c = float(current.get("temperature_2m", temperature_c))
+        weather_code = int(current.get("weather_code", weather_code))
+        wind_speed = float(current.get("wind_speed_10m", wind_speed))
+        wind_direction = float(current.get("wind_direction_10m", wind_direction))
+        visibility_m = float(current.get("visibility", visibility_km * 1000.0))
+        visibility_km = visibility_m / 1000.0
+    except Exception as e:
+        logger.error(f"Error getting flight conditions: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get flight conditions")
         current = payload.get("current", {})
         temperature_c = float(current.get("temperature_2m", temperature_c))
         weather_code = int(current.get("weather_code", weather_code))

@@ -46,6 +46,9 @@ npx cap sync android
 echo "[7/7] Aplicando permisos Android (GPS/Barómetro)..."
 bash ./scripts/apply_android_permissions.sh
 
+echo "[6/6] Sincronizando proyecto Android..."
+npx cap sync android
+
 rm -f "$ZIP_PATH"
 
 # Empaquetado portable para abrir directamente en Android Studio.
