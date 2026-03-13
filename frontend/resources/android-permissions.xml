@@ -1,0 +1,9 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- GPS/location permissions -->
+  <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+  <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+
+  <!-- Barometer/pressure sensor access hint for some OEM policies -->
+  <uses-feature android:name="android.hardware.sensor.barometer" android:required="false" />
+  <uses-permission android:name="android.permission.BODY_SENSORS" />
+</manifest>
