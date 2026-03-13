@@ -1144,7 +1144,7 @@ const App = () => {
   return (
     <div className="app">
       <header className="app-header">
-        <h1>🪂 European Paramotorist Flight Planner</h1>
+        <h1>🛰️ Paraweather Next • Smart Flight Planner</h1>
         <div className="header-stats">
           <span className="stat-item">🌍 {countries.length} Countries</span>
           <span className="stat-item">✈️ {airspaces.length} Airspaces</span>
@@ -1154,6 +1154,7 @@ const App = () => {
           )}
         </div>
         <div className="header-controls">
+          <span className="ui-version-pill">New UI</span>
           {selectedRoute && !navigationMode && (
             <button 
               onClick={handleStartNavigation}

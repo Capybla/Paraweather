@@ -1611,3 +1611,67 @@ body {
   transform-origin: 50% 24px;
   margin-left: -6px;
 }
+
+/* === 2026 UI refresh overrides === */
+.app {
+  background: radial-gradient(circle at top left, #0f172a 0%, #111827 45%, #020617 100%);
+  color: #e2e8f0;
+}
+
+.app-header {
+  background: linear-gradient(120deg, rgba(15,23,42,0.95), rgba(30,41,59,0.95));
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  backdrop-filter: blur(6px);
+}
+
+.app-header h1 {
+  letter-spacing: 0.2px;
+}
+
+.ui-version-pill {
+  background: rgba(56, 189, 248, 0.18);
+  border: 1px solid rgba(56, 189, 248, 0.5);
+  color: #7dd3fc;
+  border-radius: 999px;
+  padding: 0.35rem 0.8rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.stat-item {
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.sidebar {
+  background: rgba(15, 23, 42, 0.93);
+  border-right: 1px solid rgba(148, 163, 184, 0.22);
+  color: #cbd5e1;
+}
+
+.country-filters,
+.preferences-panel,
+.airspace-controls,
+.route-display,
+.flight-conditions,
+.preferences-collapsed {
+  background: rgba(30, 41, 59, 0.6) !important;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.22) !important;
+}
+
+.country-filters h4,
+.airspace-controls h3,
+.preferences-header h3,
+.route-display h3,
+.flight-conditions h3 {
+  color: #e2e8f0 !important;
+}
+
+.country-checkbox:hover,
+.route-item:hover {
+  background: rgba(51, 65, 85, 0.7) !important;
+}
+
+.leaflet-map {
+  filter: saturate(1.05) contrast(1.03);
+}
