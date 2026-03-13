@@ -241,6 +241,7 @@ const AirspacePreferences = ({ preferences, onPreferencesChange, isOpen, onToggl
 
 // GPS Position Tracker Component
 const GPSTracker = ({ onPositionUpdate, onSensorStatus, onMotionUpdate }) => {
+  const [watchId, setWatchId] = useState(null);
   const [sensorStatus, setSensorStatus] = useState({
     gps: 'checking',
     barometer: 'checking',
@@ -664,6 +665,25 @@ const SensorWarnings = ({ sensorStatus }) => {
 
 
 
+const FlightConditionsPanel = ({ conditions, sensorStatus, motionData }) => {
+  if (!conditions) return null;
+
+  const recommendationLabel = {
+    recommended: '✅ Recomendado volar',
+    caution: '⚠️ Volar con precaución',
+    not_recommended: '⛔ No recomendado volar'
+  };
+
+  return (
+    <div className="flight-conditions-panel">
+      <h3>🌤️ Condiciones de vuelo</h3>
+      <p><strong>Tiempo:</strong> {conditions.weather_description} · {conditions.temperature_c.toFixed(1)}°C</p>
+      <p><strong>Viento:</strong> {conditions.wind_speed_ms.toFixed(1)} m/s ({Math.round(conditions.wind_direction_deg)}°)</p>
+      <p><strong>Visibilidad:</strong> {conditions.visibility_km.toFixed(1)} km</p>
+      <p><strong>Escala de vuelo:</strong> {conditions.flight_score}/100</p>
+      <p><strong>Recomendación:</strong> {recommendationLabel[conditions.recommendation] || conditions.recommendation}</p>
+      <p><strong>Despegue óptimo:</strong> {Math.round(conditions.takeoff_heading_deg)}° (contra viento)</p>
+      <p><strong>Aterrizaje óptimo:</strong> {Math.round(conditions.landing_heading_deg)}° (contra viento)</p>
 
 const NetworkStatusBanner = ({ isOnline, weatherFromCache, weatherUpdatedAt }) => {
   if (isOnline) return null;
@@ -746,6 +766,9 @@ const WeatherWidget = ({ conditions, sensorStatus, motionData }) => {
         <div className="mini-compass-arrow" style={{ transform: `rotate(${motionData.compassHeading || conditions.wind_direction_deg}deg)` }} />
       </div>
       <p><strong>Brújula:</strong> {motionData.compassHeading ? `${Math.round(motionData.compassHeading)}°` : 'No disponible'}</p>
+      <p><strong>Velocidad (GPS):</strong> {motionData.speedMs ? `${motionData.speedMs.toFixed(1)} m/s` : 'No disponible'}</p>
+      <p><strong>Acelerómetro:</strong> {motionData.acceleration ? `${motionData.acceleration.toFixed(2)} m/s²` : 'No disponible'}</p>
+      <p><strong>Permisos:</strong> GPS {sensorStatus.gps ? '✅' : '❌'} · Barómetro {sensorStatus.barometer ? '✅' : '❌'} · Acelerómetro {sensorStatus.accelerometer ? '✅' : '❌'} · Brújula {sensorStatus.compass ? '✅' : '❌'}</p>
       <p><strong>Permisos:</strong> GPS {sensorStatus.gps ? '✅' : '❌'} · Brújula {sensorStatus.compass ? '✅' : '❌'}</p>
     </div>
   );
@@ -1105,6 +1128,7 @@ const App = () => {
   const [sensorStatus, setSensorStatus] = useState({ gps: false, barometer: false, accelerometer: false, compass: false });
   const [trackingEnabled, setTrackingEnabled] = useState(false);
   const [flightConditions, setFlightConditions] = useState(null);
+  const [motionData, setMotionData] = useState({ compassHeading: null, acceleration: null, speedMs: null });
   const [motionData, setMotionData] = useState({ compassHeading: null, acceleration: null, speedMs: null, barometricAltitude: null, pressureHpa: null });
   const [pages, setPages] = useState(UI_DEFAULT_PAGES);
   const [activePage, setActivePage] = useState(UI_DEFAULT_PAGES[0]);
@@ -1260,6 +1284,8 @@ const App = () => {
     setSensorStatus(status);
   };
 
+  const handleMotionUpdate = (data) => {
+    setMotionData(prev => ({ ...prev, ...data }));
   const motionUpdateRaf = useRef(null);
 
   const handleMotionUpdate = (data) => {
@@ -1309,6 +1335,8 @@ const App = () => {
           params: { lat: currentPosition.lat, lng: currentPosition.lng }
         });
         setFlightConditions(response.data);
+      } catch (error) {
+        console.error('Error loading flight conditions:', error);
         const minimizedData = {
           weather_description: response.data.weather_description,
           temperature_c: response.data.temperature_c,
@@ -1332,6 +1360,7 @@ const App = () => {
     };
 
     fetchConditions();
+  }, [currentPosition]);
   }, [currentPosition, isOnline]);
 
 
@@ -1440,6 +1469,13 @@ const App = () => {
               selectedCountries={selectedCountries}
               onCountryToggle={handleCountryToggle}
             />
+
+            <FlightConditionsPanel
+              conditions={flightConditions}
+              sensorStatus={sensorStatus}
+              motionData={motionData}
+            />
+            
             <div className="airspace-controls">
               <h3>Airspace Filters</h3>
               <div className="airspace-types">
@@ -1523,6 +1559,22 @@ const App = () => {
             </DraggableWidget>
           )}
 
+          <MapContainer 
+            center={mapCenter} 
+            zoom={navigationMode ? 15 : 5} 
+            className="leaflet-map"
+          >
+            <TileLayer
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            />
+            
+            {/* GPS Tracker - always active */}
+            <GPSTracker 
+              onPositionUpdate={handlePositionUpdate}
+              onSensorStatus={handleSensorStatus}
+              onMotionUpdate={handleMotionUpdate}
+            />
           {visibleOnPage('weather') && (
             <DraggableWidget id="weather" title="🌤️ Tiempo y recomendación" config={widgetConfig.weather} onUpdate={updateWidgetConfig}>
               <WeatherWidget conditions={flightConditions} sensorStatus={sensorStatus} motionData={motionData} />
