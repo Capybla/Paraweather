@@ -1487,6 +1487,13 @@ const App = () => {
               selectedCountries={selectedCountries}
               onCountryToggle={handleCountryToggle}
             />
+
+            <FlightConditionsPanel
+              conditions={flightConditions}
+              sensorStatus={sensorStatus}
+              motionData={motionData}
+            />
+            
             <div className="airspace-controls">
               <h3>Airspace Filters</h3>
               <div className="airspace-types">
@@ -1537,6 +1544,22 @@ const App = () => {
               <WeatherWidget conditions={flightConditions} sensorStatus={sensorStatus} motionData={motionData} />
             </DraggableWidget>
           )}
+          <MapContainer 
+            center={mapCenter} 
+            zoom={navigationMode ? 15 : 5} 
+            className="leaflet-map"
+          >
+            <TileLayer
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            />
+            
+            {/* GPS Tracker - always active */}
+            <GPSTracker 
+              onPositionUpdate={handlePositionUpdate}
+              onSensorStatus={handleSensorStatus}
+              onMotionUpdate={handleMotionUpdate}
+            />
 
           {visibleOnPage('altimeter') && (
             <DraggableWidget id="altimeter" title="🧭 Altímetro" config={widgetConfig.altimeter} onUpdate={updateWidgetConfig}>
