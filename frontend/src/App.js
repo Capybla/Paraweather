@@ -684,6 +684,9 @@ const FlightConditionsPanel = ({ conditions, sensorStatus, motionData }) => {
       <p><strong>Recomendación:</strong> {recommendationLabel[conditions.recommendation] || conditions.recommendation}</p>
       <p><strong>Despegue óptimo:</strong> {Math.round(conditions.takeoff_heading_deg)}° (contra viento)</p>
       <p><strong>Aterrizaje óptimo:</strong> {Math.round(conditions.landing_heading_deg)}° (contra viento)</p>
+    </div>
+  );
+};
 
 const NetworkStatusBanner = ({ isOnline, weatherFromCache, weatherUpdatedAt }) => {
   if (isOnline) return null;
@@ -693,6 +696,71 @@ const NetworkStatusBanner = ({ isOnline, weatherFromCache, weatherUpdatedAt }) =
       {weatherFromCache && weatherUpdatedAt && (
         <span> Último parte meteo: {new Date(weatherUpdatedAt).toLocaleTimeString()}.</span>
       )}
+    </div>
+  );
+};
+
+const MAP_DATASETS = [
+  { id: 'terrain-iberia', type: 'terrain', name: 'Terreno Iberia (ES/PT)', sizeMb: 480 },
+  { id: 'terrain-alps', type: 'terrain', name: 'Terreno Alpes (FR/IT/CH/AT)', sizeMb: 620 },
+  { id: 'airspace-spain', type: 'airspace', name: 'Airspace España', sizeMb: 24 },
+  { id: 'airspace-france', type: 'airspace', name: 'Airspace Francia', sizeMb: 28 }
+];
+
+const DownloadsPanel = ({ isOnline }) => {
+  const [downloads, setDownloads] = useState(() => MAP_DATASETS.map((item) => ({ ...item, status: 'idle', progress: 0 })));
+
+  useEffect(() => {
+    const timers = [];
+    downloads.forEach((item) => {
+      if (item.status !== 'downloading') return;
+      const timer = setInterval(() => {
+        setDownloads((prev) => prev.map((row) => {
+          if (row.id !== item.id || row.status !== 'downloading') return row;
+          const next = Math.min(100, row.progress + 10);
+          return { ...row, progress: next, status: next >= 100 ? 'done' : 'downloading' };
+        }));
+      }, 600);
+      timers.push(timer);
+    });
+    return () => timers.forEach(clearInterval);
+  }, [downloads]);
+
+  const startDownload = (id) => {
+    if (!isOnline) return;
+    setDownloads((prev) => prev.map((row) => row.id === id ? { ...row, status: 'downloading', progress: row.progress || 1 } : row));
+  };
+
+  const pauseDownload = (id) => {
+    setDownloads((prev) => prev.map((row) => row.id === id ? { ...row, status: 'paused' } : row));
+  };
+
+  const resetDownload = (id) => {
+    setDownloads((prev) => prev.map((row) => row.id === id ? { ...row, status: 'idle', progress: 0 } : row));
+  };
+
+  return (
+    <div className="downloads-panel">
+      <h3>📦 Descargas in-app</h3>
+      <p className="downloads-subtitle">Mapas de terreno y airspace sin salir de la app.</p>
+      {downloads.map((item) => (
+        <div key={item.id} className="download-item">
+          <div className="download-main">
+            <strong>{item.name}</strong>
+            <span>{item.sizeMb} MB</span>
+          </div>
+          <div className="download-progress">
+            <div className="download-progress-fill" style={{ width: `${item.progress}%` }} />
+          </div>
+          <div className="download-actions">
+            {item.status !== 'downloading' && item.status !== 'done' && <button onClick={() => startDownload(item.id)}>⬇️ Descargar</button>}
+            {item.status === 'downloading' && <button onClick={() => pauseDownload(item.id)}>⏸️ Pausar</button>}
+            {(item.status === 'paused' || item.status === 'done') && <button onClick={() => resetDownload(item.id)}>🔄 Reiniciar</button>}
+            <span className={`download-status ${item.status}`}>{item.status}</span>
+          </div>
+        </div>
+      ))}
+      {!isOnline && <p className="downloads-offline">Sin conexión: vuelve online para iniciar descargas.</p>}
     </div>
   );
 };
@@ -747,6 +815,15 @@ const DraggableWidget = ({ id, title, children, config, onUpdate }) => {
     </div>
   );
 };
+
+const MapButtonControls = ({ onCenterPosition, onToggleSidebar, onStartNavigation, onEndNavigation, canStartNavigation, navigationMode }) => (
+  <div className="map-button-controls">
+    <button onClick={onCenterPosition}>🎯 Centrar GPS</button>
+    <button onClick={onToggleSidebar}>🗂️ Panel</button>
+    {!navigationMode && <button disabled={!canStartNavigation} onClick={onStartNavigation}>🧭 Navegar</button>}
+    {navigationMode && <button onClick={onEndNavigation}>🛑 Fin navegación</button>}
+  </div>
+);
 
 const WeatherWidget = ({ conditions, sensorStatus, motionData }) => {
   if (!conditions) {
@@ -1128,7 +1205,6 @@ const App = () => {
   const [sensorStatus, setSensorStatus] = useState({ gps: false, barometer: false, accelerometer: false, compass: false });
   const [trackingEnabled, setTrackingEnabled] = useState(false);
   const [flightConditions, setFlightConditions] = useState(null);
-  const [motionData, setMotionData] = useState({ compassHeading: null, acceleration: null, speedMs: null });
   const [motionData, setMotionData] = useState({ compassHeading: null, acceleration: null, speedMs: null, barometricAltitude: null, pressureHpa: null });
   const [pages, setPages] = useState(UI_DEFAULT_PAGES);
   const [activePage, setActivePage] = useState(UI_DEFAULT_PAGES[0]);
@@ -1271,6 +1347,12 @@ const App = () => {
     setTrackingEnabled(false);
   };
 
+  const handleCenterPosition = () => {
+    if (currentPosition) {
+      setMapCenter([currentPosition.lat, currentPosition.lng]);
+    }
+  };
+
   const handlePositionUpdate = (position) => {
     setCurrentPosition(position);
     setMotionData(prev => ({ ...prev, speedMs: position.speed || prev.speedMs }));
@@ -1284,8 +1366,6 @@ const App = () => {
     setSensorStatus(status);
   };
 
-  const handleMotionUpdate = (data) => {
-    setMotionData(prev => ({ ...prev, ...data }));
   const motionUpdateRaf = useRef(null);
 
   const handleMotionUpdate = (data) => {
@@ -1335,8 +1415,6 @@ const App = () => {
           params: { lat: currentPosition.lat, lng: currentPosition.lng }
         });
         setFlightConditions(response.data);
-      } catch (error) {
-        console.error('Error loading flight conditions:', error);
         const minimizedData = {
           weather_description: response.data.weather_description,
           temperature_c: response.data.temperature_c,
@@ -1360,8 +1438,7 @@ const App = () => {
     };
 
     fetchConditions();
-  }, [currentPosition]);
-  }, [currentPosition, isOnline]);
+  }, [currentPosition, isOnline, lastWeatherSnapshot]);
 
 
   useEffect(() => {
@@ -1495,6 +1572,7 @@ const App = () => {
               <button onClick={() => setSelectedAirspaceTypes([])} className="clear-filters-btn">Clear All Filters</button>
             </div>
             <OpenSourcePanel />
+            <DownloadsPanel isOnline={isOnline} />
             <RouteDisplay routes={routes} selectedRoute={selectedRoute} onRouteSelect={setSelectedRoute} />
           </div>
         )}
@@ -1503,6 +1581,14 @@ const App = () => {
           {visibleOnPage('map') && (
             <DraggableWidget id="map" title="🗺️ Mapa de vuelo" config={widgetConfig.map} onUpdate={updateWidgetConfig}>
               <div className="map-widget-inner">
+                <MapButtonControls
+                  onCenterPosition={handleCenterPosition}
+                  onToggleSidebar={() => setShowSidebar(!showSidebar)}
+                  onStartNavigation={handleStartNavigation}
+                  onEndNavigation={handleEndNavigation}
+                  canStartNavigation={Boolean(selectedRoute && sensorStatus.gps)}
+                  navigationMode={navigationMode}
+                />
                 <SensorWarnings sensorStatus={sensorStatus} />
                 {navigationMode && selectedRoute && (
                   <NavigationMode route={selectedRoute} currentPosition={currentPosition} onNavigationEnd={handleEndNavigation} />
@@ -1559,22 +1645,6 @@ const App = () => {
             </DraggableWidget>
           )}
 
-          <MapContainer 
-            center={mapCenter} 
-            zoom={navigationMode ? 15 : 5} 
-            className="leaflet-map"
-          >
-            <TileLayer
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            />
-            
-            {/* GPS Tracker - always active */}
-            <GPSTracker 
-              onPositionUpdate={handlePositionUpdate}
-              onSensorStatus={handleSensorStatus}
-              onMotionUpdate={handleMotionUpdate}
-            />
           {visibleOnPage('weather') && (
             <DraggableWidget id="weather" title="🌤️ Tiempo y recomendación" config={widgetConfig.weather} onUpdate={updateWidgetConfig}>
               <WeatherWidget conditions={flightConditions} sensorStatus={sensorStatus} motionData={motionData} />
