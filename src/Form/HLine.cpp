@@ -1,0 +1,23 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Copyright The XCSoar Project
+
+#include "HLine.hpp"
+#include "Look/DialogLook.hpp"
+#include "ui/canvas/Canvas.hpp"
+#include "Screen/Layout.hpp"
+
+void
+HLine::OnPaint(Canvas &canvas) noexcept
+{
+#ifndef ENABLE_OPENGL
+  canvas.Clear(look.background_color);
+#endif
+
+  const int width = canvas.GetWidth();
+  const unsigned height = canvas.GetHeight();
+  const int middle = height / 2;
+
+  canvas.Select(Pen(Layout::ScaleFinePenWidth(1),
+                    look.dark_mode ? COLOR_GRAY : COLOR_BLACK));
+  canvas.DrawLine({0, middle}, {width, middle});
+}

@@ -1,0 +1,692 @@
+################
+Compiling XCSoar
+################
+
+The Build System
+================
+
+A big plain :file:`Makefile` is used to control the XCSoar build.  GNU
+extensions are allowed.
+
+This chapter describes the internals of our build system.
+
+Linker parameters
+-----------------
+
+The following variables (or variable suffixes) appear in the
+``Makefile`` (conforming to ``automake`` conventions):
+
+- ``LDFLAGS``: Linker flags, such as ``-static`` or ``-Wl,...``, but
+  not ``-l``.
+
+- ``LDLIBS``: All ``-l`` flags, e.g. ``-lGL``.
+
+- ``LDADD``: Path names of static libraries,
+  e.g. :file:`/usr/lib/libz.a`.
+
+Search directories (``-L``) are technically linker "flags", but they
+are allowed in ``LDLIBS``, too.
+
+
+Compiling XCSoar on Linux
+=========================
+
+The ``make`` command is used to launch the XCSoar build process.
+
+Most of this chapter describes how to build XCSoar on Linux, with
+examples for Debian/Ubuntu. A cross-compiler is used to build binaries
+for other operating systems (for example Android and Windows).
+
+
+Getting the Source Code
+-----------------------
+
+The XCSoar source code is managed with `git <http://git-scm.com/>`__. It
+can be downloaded with the following command::
+
+  git clone --recurse-submodules https://github.com/XCSoar/XCSoar
+
+To update your repository, type::
+
+  git pull --recurse-submodules
+
+To update third-party libraries used by XCSoar (such as `Boost
+<http://www.boost.org/>`__), type::
+
+  git submodule update --init --recursive
+
+For more information, please read to the :program:`git` documentation.
+
+Requirements
+------------
+
+The following is needed for all targets:
+
+-  GNU make
+
+-  GNU compiler collection (``gcc``), version 10 or later or clang/LLVM
+   12 (with "make CLANG=y")
+
+-  GNU gettext
+
+-  `rsvg <https://librsvg.sourceforge.net/>`__
+
+-  `ImageMagick 6.4 <https://www.imagemagick.org/>`__
+
+-  `xsltproc <http://xmlsoft.org/XSLT/xsltproc2.html>`__
+
+-  `Info-ZIP <http://www.info-zip.org/>`__
+
+-  Perl
+
+-  `SoX <http://sox.sourceforge.net/>`__
+
+The following command installs these on Debian::
+
+  sudo apt-get install make \
+      librsvg2-bin xsltproc \
+      imagemagick gettext sox \
+      git quilt zip \
+      m4 automake
+
+Target-specific Build Instructions
+----------------------------------
+
+Compiling for Linux/UNIX
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+The following additional packages are needed to build for Linux and
+similar operating systems:
+
+-  `zlib <https://www.zlib.net/>`__
+
+-  `c-ares <https://c-ares.org/>`__
+
+-  `CURL <https://curl.se/>`__
+
+-  `Lua <https://www.lua.org/>`__
+
+-  `libinput <https://www.freedesktop.org/wiki/Software/libinput/>`__
+   (not required when using Wayland or on the KOBO)
+
+-  `SDL <https://www.libsdl.org/>`__
+
+-  `SDL_ttf <https://github.com/libsdl-org/SDL_ttf>`__
+
+-  `libpng <http://www.libpng.org/pub/png/libpng.html>`__
+
+-  `libjpeg <https://libjpeg.sourceforge.net/>`__
+
+-  OpenGL (Mesa)
+
+-  to run XCSoar, you need one of the following fonts (Debian package):
+   DejaVu (``fonts-dejavu``), Roboto (``fonts-roboto``), Droid
+   (``fonts-droid``), Freefont (``fonts-freefont-ttf``)
+
+The following command installs these on Debian::
+
+  sudo apt-get install make g++  zlib1g-dev \
+      libfmt-dev \
+      libdbus-1-dev \
+      libsodium-dev \
+      libfreetype-dev \
+      libpng-dev libjpeg-dev \
+      libtiff5-dev libgeotiff-dev \
+      libc-ares-dev \
+      libcurl4-openssl-dev \
+      libssl-dev \
+      libc-ares-dev \
+      liblua5.4-dev \
+      libxml-parser-perl \
+      libasound2-dev \
+      librsvg2-bin xsltproc \
+      imagemagick gettext \
+      mesa-common-dev libgl1-mesa-dev libegl1-mesa-dev \
+      libinput-dev \
+      fonts-dejavu
+
+To compile, run::
+
+  make
+
+You may specify one of the following targets with ``TARGET=x``:
+
+========== =================================================
+``UNIX``   regular build (the default setting)
+``UNIX32`` generate 32 bit binary
+``UNIX64`` generate 64 bit binary
+``OPT``    alias for UNIX with optimisation and no debugging
+========== =================================================
+
+Compiling for Android
+~~~~~~~~~~~~~~~~~~~~~
+
+For Android, you need:
+
+- `Android SDK level 35 <http://developer.android.com/sdk/>`__
+
+- `Android NDK r26d <http://developer.android.com/sdk/ndk/>`__
+
+- `Ogg Vorbis <http://www.vorbis.com/>`__
+
+- Java JDK
+
+On Debian::
+
+  sudo apt-get install
+      default-jdk-headless \
+      vorbis-tools \
+      adb
+
+The required Android SDK components are:
+
+- Android SDK Build-Tools 35.0.0
+
+- SDK Platform 35
+
+These can be installed from the Android Studio SDK Manager, or using the
+SDK command line tools:
+
+tools/bin/sdkmanager  "build-tools;35.0.0"  "platforms;android-35"
+
+The ``Makefile`` assumes that the Android SDK is installed in
+``~/opt/android-sdk-linux`` and the NDK is installed in
+``~/opt/android-ndk-r26d``. You can use the options ``ANDROID_SDK`` and
+``ANDROID_NDK`` to override these paths.
+
+Load/update the IOIO source code::
+
+  git submodule update --init --recursive
+
+To compile, run::
+
+  make TARGET=ANDROID
+
+Use one of the following targets:
+
+.. list-table::
+ :widths: 20 80
+ :header-rows: 1
+
+ * - Name
+   - Description
+ * - ``ANDROID``
+   - for ARM CPUs (same as ``ANDROID7``)
+ * - ``ANDROID7``
+   - for ARMv7 CPUs (32 bit)
+ * - ``ANDROIDAARCH64``
+   - for 64 bit ARM CPUs
+ * - ``ANDROID86``
+   - for x86-32 CPUs
+ * - ``ANDROIDX64``
+   - for x86-64 CPUs
+ * - ``ANDROIDFAT``
+   - "fat" package for all supported CPUs
+
+Compiling for Windows
+~~~~~~~~~~~~~~~~~~~~~
+
+To cross-compile to (desktop) Windows, you need
+`Mingw-w64 <http://mingw-w64.org>`__.
+
+The following command installs it on Debian::
+
+  sudo apt-get install g++-mingw-w64
+
+To compile for 32 bit Windows, run::
+
+  make TARGET=PC
+
+Use one of the following targets:
+
+========= ============================
+``PC``    32 bit Windows (i686)
+``WIN64`` Windows x64 (amd64 / x86-64)
+========= ============================
+
+Compiling for iOS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+To compile for iOS, you need a Mac with Xcode (at least the Command Line Tools) installed.
+
+Install the required Homebrew packages via the provisioning script::
+
+  ./ide/provisioning/install-darwin-packages.sh BASE IOS
+
+Note that you always need to install the BASE packages and the specific IOS or MACOS packages.
+
+To compile for iOS / AArch64, run::
+
+  make TARGET=IOS64 ipa
+
+To compile with the iOS simulator SDK, run::
+
+  make TARGET=IOS64SIM ipa
+
+To build and run simulator tests automatically, run::
+
+  make check-ios-sim
+
+This target builds simulator artifacts (``TARGET=IOS64SIM``), installs
+``XCSoar.app`` into an available iPhone simulator, and runs selected test
+binaries. There is no fixed default device name (``simctl`` depends on
+installed runtimes and Xcode). With ``SIM_DEVICE_NAME`` unset, the script
+picks an available iPhone from ``simctl list``; you can set ``SIM_DEVICE_NAME``
+to require a specific model.
+
+Implementation note: the runner uses a Python script
+(``darwin/check-ios-sim.py``) and discovers simulators via
+``xcrun simctl list devices available --json``.
+Execution is delegated to the existing Perl TAP harness
+(``test/src/testall.pl``) using generated simulator wrapper executables.
+
+Optional environment variables::
+
+  SIM_DEVICE_NAME="iPhone 16"      # Optional: require this model; else any iPhone
+  SIM_TESTS_MODE=all               # Default mode: run all test_* / Test* binaries
+  SIM_TESTS_MODE=smoke             # Run only smoke subset from SIM_SMOKE_TESTS
+  SIM_SMOKE_TESTS="TestCRC8 ..."  # Override smoke test selection
+  SIM_SKIP_TESTS="TestWrapText"    # Space-separated tests to skip in simulator
+
+To compile for iOS / ARMv7, run::
+
+  make TARGET=IOS32 ipa
+
+Compiling for macOS (with Homebrew)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Install the required Homebrew packages via the provisioning script::
+
+  ./ide/provisioning/install-darwin-packages.sh MACOS
+
+To compile for macOS / ARM64, run::
+
+  make TARGET=MACOS dmg
+
+To compile for macOS / x86_64, run::
+
+  make TARGET=OSX64 dmg
+
+Debugging for iOS and macOS
+
+Debugging under iOS and macOS is possible using the LLDB debugger.
+To make this convenient, Xcode or Visual Studio can be used.
+An example Xcode project is provided in `darwin/XCSoar.xcodeproj`. 
+It includes one target for iOS and macOS and will automatically build 
+the XCSoar binary for the selected device target, using the build
+helper script `darwin/build.sh`.
+For iOS debugging with Visual Studio Code, the `iOS Debug`
+extension (https://github.com/nisargjhaveri/vscode-ios-debug) can be used.
+Note that this also requires an Xcode installation.
+
+Compiling on the Raspberry Pi 4
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Install additional dependencies::
+
+  sudo apt-get install libdrm-dev libgbm-dev \
+      libgles2-mesa-dev \
+      libinput-dev
+
+Compile::
+
+  make
+
+Compiling for the Raspberry Pi 1-3
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+You need an ARM toolchain. For example, you can use the Debian package
+``g++-arm-linux-gnueabihf``::
+
+  make TARGET=PI
+
+To optimize for the Raspberry Pi 2 (which has an ARMv7 with NEON instead
+of an ARMv6)::
+
+  make TARGET=PI2
+
+These targets are only used for cross-compiling on a (desktop) computer.
+If you compile on the Raspberry Pi, the default target will auto-detect
+the Pi.
+
+Compiling for the Cubieboard
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+To compile, run::
+
+  make TARGET=CUBIE
+
+This target is only used for cross-compiling on a (desktop) computer. If
+you compile on the Cubieboard, the default target will auto-detect the
+Cubieboard.
+
+Compiling for Kobo E-book Readers
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+An ARM toolchain is bootstrapped during the build automatically.
+
+To compile XCSoar, run::
+
+  make TARGET=KOBO
+
+To build the kobo install file ``KoboRoot.tgz``, you need the following
+Debian packages::
+
+  sudo apt-get install \
+      fakeroot \
+      python3-setuptools \
+      ttf-bitstream-vera \
+      fonts-roboto-unhinted
+
+Then compile using this command::
+
+  make TARGET=KOBO output/KOBO/KoboRoot.tgz
+
+Building USB-OTG Kobo Kernel
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+To build a USB-OTG capable kernel for the Kobo, clone the git
+repository::
+
+  git clone https://github.com/XCSoar/linux.git
+
+Check out the correct branch. For the Kobo Mini, this is the branch
+``kobo-mini``, for the Kobo Glo HD, the branch is called
+``kobo-glohd``, and for the Kobo Aura 2, use the branch
+``kobo-aura2``::
+
+  git checkout kobo-mini
+
+Configure the kernel using the configuration files from the
+``kobo/kernel`` directory in XCSoar’s ``git`` repository. For the Kobo
+Mini, install a `gcc 4.4 cross
+compiler <https://master.dl.sourceforge.net/project/iadfilehost/devtools/arm-2010q1-202-arm-none-linux-gnueabi-i686-pc-linux-gnu.tar.bz2>`__,
+for example in ``/opt``. For the Kobo Glo HD and Aura 2, install a `gcc
+4.6 cross
+compiler <https://launchpad.net/gcc-arm-embedded/4.6/4.6-2012-q4-update/+download/gcc-arm-none-eabi-4_6-2012q4-20121016.tar.bz2>`__
+
+To compile a kernel image for the Kobo Mini, type::
+
+  make \
+      CROSS_COMPILE=/opt/arm-2010q1/bin/arm-none-linux-gnueabi- \
+      ARCH=arm uImage
+
+To compile a kernel image for the Kobo Glo HD, type::
+
+  make \
+      CROSS_COMPILE=/opt/gcc-arm-none-eabi-4_6-2012q4/bin/arm-none-eabi- \
+      ARCH=arm uImage
+
+Copy ``uImage`` to the Kobo. Kernel images can be installed with the
+following command::
+
+  dd if=/path/to/uImage of=/dev/mmcblk0 bs=512 seek=2048
+
+Note that XCSoar’s ``rcS`` script may overwrite the kernel image
+automatically under certain conditions. To use a new kernel permanently,
+install it in ``/opt/xcsoar/lib/kernel``. Read the file ``kobo/rcS`` to
+find out more about this.
+
+To include kernel images in ``KoboRoot.tgz``, copy ``uImage.otg``,
+``uImage.kobo``, ``uImage.glohd.otg``, ``uImage.glohd``,
+``uImage.aura2`` and ``uImage.aura2.otg`` to ``/opt/kobo/kernel``.
+
+.. _build-system-reference:
+
+Graphics Backends by Target
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Defaults shown are from the build system (they can be overridden with
+``ENABLE_SDL=y|n`` and ``OPENGL=y|n``).
+
+.. list-table::
+ :widths: 12 20 12 18 38
+ :header-rows: 1
+
+ * - Target
+   - Platform / ABI
+   - SDL (default)
+   - Graphics Engine (default)
+   - Notes
+ * - ``UNIX``
+   - Linux/Unix (native)
+   - no
+   - OpenGL
+   - Default on Unix-like hosts; main desktop build.
+ * - ``UNIX32``
+   - Linux/Unix 32-bit
+   - no
+   - OpenGL
+   - ``UNIX`` with ``-m32``.
+ * - ``UNIX64``
+   - Linux/Unix 64-bit
+   - no
+   - OpenGL
+   - ``UNIX`` with ``-m64``.
+ * - ``OPT``
+   - Linux/Unix optimized
+   - no
+   - OpenGL
+   - Alias for ``UNIX`` with ``DEBUG=n`` (set ``TARGET_OUTPUT_DIR`` if
+     you want a separate output tree).
+ * - ``WAYLAND``
+   - Linux/Unix (Wayland)
+   - no
+   - OpenGL (EGL)
+   - Experimental Wayland display server build.
+ * - ``FUZZER``
+   - Linux/Unix (libFuzzer)
+   - no
+   - Software (VFB)
+   - Builds fuzz targets with clang + libFuzzer.
+ * - ``PC``
+   - Windows 32-bit (i686)
+   - no
+   - GDI
+   - MinGW-w64 cross-compile target.
+ * - ``WIN64``
+   - Windows 64-bit (x86_64)
+   - no
+   - GDI
+   - Flavor of ``PC`` with 64-bit toolchain.
+ * - ``ANDROID``
+   - Android ARMv7
+   - no
+   - OpenGL ES (EGL)
+   - Alias for ``ANDROID7``.
+ * - ``ANDROID7``
+   - Android ARMv7 (32-bit)
+   - no
+   - OpenGL ES (EGL)
+   - Default Android ABI (armeabi-v7a).
+ * - ``ANDROIDAARCH64``
+   - Android ARM64 (64-bit)
+   - no
+   - OpenGL ES (EGL)
+   - arm64-v8a.
+ * - ``ANDROID86``
+   - Android x86 (32-bit)
+   - no
+   - OpenGL ES (EGL)
+   - x86 ABI.
+ * - ``ANDROIDX64``
+   - Android x86_64 (64-bit)
+   - no
+   - OpenGL ES (EGL)
+   - x86_64 ABI.
+ * - ``ANDROIDFAT``
+   - Android multi-ABI
+   - no
+   - OpenGL ES (EGL)
+   - "Fat" package across supported ABIs.
+ * - ``MACOS``
+   - macOS ARM64
+   - yes
+   - OpenGL (ANGLE)
+   - Apple Silicon (min macOS 12.0).
+ * - ``OSX64``
+   - macOS x86_64
+   - yes
+   - OpenGL (ANGLE)
+   - Intel (min macOS 12.0).
+ * - ``IOS32``
+   - iOS armv7
+   - yes
+   - OpenGL ES
+   - Legacy 32-bit iOS (min iOS 10.0).
+ * - ``IOS64``
+   - iOS arm64
+   - yes
+   - OpenGL ES
+   - Device build (min iOS 11.0).
+ * - ``IOS64SIM``
+   - iOS simulator arm64
+   - yes
+   - OpenGL ES
+   - Simulator SDK (min iOS 11.0).
+ * - ``PI``
+   - Raspberry Pi 1-3
+   - no
+   - OpenGL (EGL/KMS)
+   - ARMv6 cross-compile target.
+ * - ``PI2``
+   - Raspberry Pi 2
+   - no
+   - OpenGL (EGL/KMS)
+   - ARMv7 + NEON cross-compile target.
+ * - ``CUBIE``
+   - Cubieboard
+   - no
+   - OpenGL (EGL/KMS)
+   - Cross-compile target (ARMv7 + NEON).
+ * - ``KOBO``
+   - Kobo e-readers
+   - no
+   - Framebuffer (software)
+   - Cross-compile target (ARMv7 + NEON).
+ * - ``NEON``
+   - Generic ARMv7 + NEON
+   - yes
+   - OpenGL
+   - Internal flavor used by ``PI2``, ``CUBIE``, ``KOBO``.
+
+For a full list of build variables and their defaults, see the
+parameter list at the top of ``Makefile`` and the files in
+``build/*.mk``.
+
+Editing the Manuals
+~~~~~~~~~~~~~~~~~~~
+
+The XCSoar documententation (except for the developer manual) is
+written using the TeX markup language. You can edit the source files
+with any text editor, although a specific TeX editor (e.g. LateXila)
+makes it easier.
+
+Source files are located in the en, fr, de, pl subdirectories of the
+:file:`doc/manual` directory. The Developer manual is in the
+doc/manual/en directory. The generated files are put into the
+output/manual directory.
+
+To generate the PDF manuals, you need the TexLive package, plus some
+European languages.
+
+The following command installs these on Debian::
+
+  sudo apt-get install texlive \
+      texlive-latex-extra \
+      texlive-luatex \
+      texlive-lang-french \
+      texlive-lang-polish \
+      texlive-lang-german \
+      texlive-lang-portuguese \
+      liblocale-po-perl
+
+The documentation is distributed as PDF files. Generating the PDFs from
+the TeX files is done by typing::
+
+  make manual
+
+A lot of warnings are generated... this is normal. Check for the
+presence of PDF files to ensure that the generation process was
+successful.
+
+Options
+-------
+
+Parallel Build
+~~~~~~~~~~~~~~
+
+Most contemporary computers have multiple CPU cores. To take advantage
+of these, use the ``make -j`` option::
+
+  make -j12
+
+This command launches 12 compiler processes at the same time.
+
+Rule of thumb: choose a number that is slightly larger than the number
+of CPU cores in your computer. 12 is a good choice for a computer with 8
+CPU cores.
+
+Optimised Build
+~~~~~~~~~~~~~~~
+
+By default, debugging is enabled and compiler optimisations are
+disabled. The resulting binaries are very slow. During development, that
+is helpful, because it catches more bugs.
+
+To produce optimised binaries, use the option ``DEBUG``::
+
+  make DEBUG=n
+
+Be sure to clean the output directory before you change the ``DEBUG``
+setting, because debug and non-debug output files are not compatible.
+
+The convenience target ``OPT`` is a shortcut for::
+
+  TARGET=UNIX DEBUG=n TARGET_OUTPUT_DIR=output/OPT
+
+It allows building both debug and non-debug incrementally, because two
+different output directories are used.
+
+Compiling with ccache
+~~~~~~~~~~~~~~~~~~~~~
+
+To speed up the compilation of XCSoar we can use ``ccache`` to cache the
+object files for us. All we have to do is install ccache and add
+``USE_CCACHE=y`` to the make command line::
+
+  sudo apt-get install ccache
+  make TARGET=UNIX USE_CCACHE=y
+
+Using a build VM with Vagrant
+-----------------------------
+
+An easy way to install a virtual machine with all build dependencies
+required for various targets (e.g. Linux, Windows, Android and Kobo), is
+using Vagrant.
+
+The following is needed to install the VM with Vagrant:
+
+-  `Vagrant <https://www.vagrantup.com/>`__
+
+-  `VirtualBox <https://www.virtualbox.org/>`__
+
+The Vagrantfile can be found in the ``ide/vagrant`` subfolder of the
+source. To set up the VM, and connect to it, type::
+
+  cd ide/vagrant
+  vagrant up
+  vagrant ssh
+
+The XCSoar source directory on the host is automatically mounted as a
+shared folder at ``/xcsoar-host-src`` in the VM. For performance
+reasons, it is not recommended to compile directly in this folder. A git
+clone of this directory is automatically created in the home directory
+(`` /xcsoar-src``), which should be used instead. In this git clone, the
+XSoar source directory on the host is preconfigured as a git remote
+named “host”, and the XCSoar master directory is preconfigured as a
+remote named “master”.
+
+To shutdown the VM, type::
+
+  vagrant halt

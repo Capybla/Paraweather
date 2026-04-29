@@ -1,0 +1,60 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Copyright The XCSoar Project
+
+#include "Audio/Features.hpp"
+#include "Audio/Sound.hpp"
+
+#ifdef ANDROID
+#include "Android/Main.hpp"
+#include "Android/SoundUtil.hpp"
+#include "Android/Context.hpp"
+#endif
+
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#if TARGET_OS_IPHONE
+#include "Apple/SoundUtil.hpp"
+#endif
+#endif
+
+#if defined(_WIN32)
+#include "ResourceLoader.hpp"
+#include <mmsystem.h>
+#elif defined(HAVE_PCM_PLAYER)
+#include "GlobalPCMResourcePlayer.hpp"
+#include "PCMResourcePlayer.hpp"
+#endif
+
+bool
+PlayResource(const char *resource_name)
+{
+#ifdef ANDROID
+
+  if (strstr(resource_name, ".wav"))
+    return SoundUtil::PlayExternal(Java::GetEnv(), context->Get(), resource_name);
+  return SoundUtil::Play(Java::GetEnv(), context->Get(), resource_name);
+
+#elif defined(__APPLE__) && TARGET_OS_IPHONE
+
+  return SoundUtil::Play(resource_name);
+
+#elif defined(_WIN32)
+
+  if (strstr(resource_name, TEXT(".wav")))
+    return sndPlaySound(resource_name, SND_ASYNC | SND_NODEFAULT);
+
+  ResourceLoader::Data data = ResourceLoader::Load(resource_name, "WAVE");
+  return data.data() != nullptr &&
+    sndPlaySound((LPCTSTR)data.data(), SND_MEMORY | SND_ASYNC | SND_NODEFAULT);
+
+#elif defined(HAVE_PCM_PLAYER)
+
+  if (nullptr == pcm_resource_player)
+    return false;
+
+  return pcm_resource_player->PlayResource(resource_name);
+
+#else
+  return false;
+#endif
+}

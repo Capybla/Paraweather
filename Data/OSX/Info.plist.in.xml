@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+
+<plist version="1.0">
+  <dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>English</string>
+    <key>CFBundleExecutable</key>
+    <string>xcsoar</string>
+    <key>CFBundleIdentifier</key>
+    <string>OSX_BUNDLE_ID_PLACEHOLDER</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>OSX_APP_LABEL_PLACEHOLDER</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>VERSION_PLACEHOLDER</string>
+    <key>CFBundleVersion</key>
+    <string>BUILD_NUMBER_PLACEHOLDER</string>
+    <key>CFBundleIconFile</key>
+    <string>logo_1024</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>LSMinimumSystemVersion</key>
+    <string>12.0.0</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.navigation</string>
+    <key>NSLocationUsageDescription</key>
+    <string>XCSoar uses your location to provide onboard GPS navigation and to record your flight track.</string>
+    <key>ITSAppUsesNonExemptEncryption</key>
+    <false/>
+  </dict>
+</plist>

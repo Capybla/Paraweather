@@ -1,0 +1,50 @@
+---
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'doc/**'
+      - '.github/workflows/build-docs.yml'
+    branches:
+      - master
+  pull_request:
+    paths:
+      - 'doc/**'
+      - '.github/workflows/build-docs.yml'
+    branches:
+      - master
+env:
+  DOC_OUTPUT: manual
+  TARGET_FINAL: XCSoar-docs
+  TARGET_EXT: pdf
+jobs:
+  xcsoar-compile:
+    runs-on: ubuntu-24.04
+    container: debian:trixie-slim
+    steps:
+     - name: Install checkout dependencies
+       run: |
+         apt-get update
+         apt-get install -y --no-install-recommends git ca-certificates
+
+     - id: checkout
+       uses: actions/checkout@v6
+       with:
+         submodules: false
+
+     - name: find githash
+       run: |
+         echo "git_hash=$(git rev-parse --short $GITHUB_SHA)" >> $GITHUB_ENV
+
+     - name: Install build dependencies
+       run: |
+         ./ide/provisioning/install-debian-packages.sh UPDATE BASE MANUAL
+
+     - name: XCSoar generate Docs
+       run: make manual V=2
+
+     - name: upload artifact
+       uses: actions/upload-artifact@v7
+       with:
+         name: ${{ env.TARGET_FINAL }}-${{ env.git_hash }}
+         path: output/${{ env.DOC_OUTPUT }}/*.${{ env.TARGET_EXT }}
