@@ -416,73 +416,35 @@ type=key
 data=RIGHT
 event=ScreenModes next
 
-# Gestures
+# Touch buttons (mobile-friendly quick actions)
 
 mode=default
-type=gesture
-data=U
+type=key
+data=0
 event=Zoom in
+label=Zoom\n+
+location=5
 
 mode=default
-type=gesture
-data=D
+type=key
+data=0
 event=Zoom out
+label=Zoom\n-
+location=6
 
 mode=default
-type=gesture
-data=UD
-event=Zoom auto show
-event=Zoom auto on
-
-mode=default
-type=gesture
-data=R
-event=ScreenModes previous
-
-mode=default
-type=gesture
-data=L
-event=ScreenModes next
-
-mode=default
-type=gesture
-data=DR
-event=WaypointDetails select
-
-mode=default
-type=gesture
-data=DL
-event=Setup Alternates
-
-mode=default
-type=gesture
-data=DU
+type=key
+data=0
 event=Mode Menu
+label=Menu
+location=7
 
 mode=default
-type=gesture
-data=RD
-event=Calculator
-
-mode=default
-type=gesture
-data=URD
-event=Analysis
-
-mode=default
-type=gesture
-data=LDR
-event=Checklist
-
-mode=default
-type=gesture
-data=URDL
+type=key
+data=0
 event=Pan on
-
-mode=default
-type=gesture
-data=LDRDL
-event=Status all
+label=Pan
+location=8
 
 ###
 
@@ -1124,11 +1086,29 @@ location=4
 
 mode=Menu
 type=key
+data=ESCAPE
+event=Mode default
+
+mode=Menu
+type=gesture
+data=R
+event=Mode default
+
+mode=Menu
+type=key
 data=9
 event=LockScreen
 event=Mode default
 label=Lock Screen
 location=7
+
+mode=Menu
+type=key
+data=0
+event=Setup Basic
+event=Mode default
+label=Downloads\n& Maps
+location=8
 
 mode=Menu
 type=key
