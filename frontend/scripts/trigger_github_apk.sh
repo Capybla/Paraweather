@@ -4,6 +4,9 @@ set -euo pipefail
 # Trigger the GitHub Actions workflow that builds the Android APK.
 # Required env vars:
 #   GITHUB_TOKEN  -> token with repo/actions permissions
+# Optional:
+#   GITHUB_REPO   -> owner/repo (auto-detect from git remote origin if omitted)
+#   GITHUB_REF    -> git ref to build (auto-detect current branch if omitted)
 #   GITHUB_REPO   -> owner/repo (example: capybla/paraweather)
 # Optional:
 #   GITHUB_REF    -> git ref to build (default: main)
@@ -15,6 +18,25 @@ if ! command -v curl >/dev/null 2>&1; then
 fi
 
 : "${GITHUB_TOKEN:?Falta GITHUB_TOKEN (token con permisos repo/actions).}"
+
+WORKFLOW_FILE="${WORKFLOW_FILE:-android-apk.yml}"
+
+if [[ -z "${GITHUB_REPO:-}" ]]; then
+  ORIGIN_URL="$(git remote get-url origin 2>/dev/null || true)"
+  if [[ -n "$ORIGIN_URL" ]]; then
+    GITHUB_REPO="$(echo "$ORIGIN_URL" | sed -E 's#(git@github.com:|https://github.com/)##; s#\.git$##')"
+  fi
+fi
+
+: "${GITHUB_REPO:?Falta GITHUB_REPO con formato owner/repo (o remote origin configurado).}"
+
+if [[ -z "${GITHUB_REF:-}" ]]; then
+  GITHUB_REF="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+  if [[ -z "$GITHUB_REF" || "$GITHUB_REF" == "HEAD" ]]; then
+    GITHUB_REF="main"
+  fi
+fi
+
 : "${GITHUB_REPO:?Falta GITHUB_REPO con formato owner/repo.}"
 
 GITHUB_REF="${GITHUB_REF:-main}"

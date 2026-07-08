@@ -243,6 +243,40 @@ def parse_openair_airspace(openair_content: str) -> List[Dict]:
     
     return airspaces
 
+
+
+def airspaces_to_geojson(airspaces: List[Dict]) -> Dict:
+    features = []
+    for idx, airspace in enumerate(airspaces):
+        coords = airspace.get('coordinates', [])
+        ring = []
+        for c in coords:
+            lat = c.get('lat')
+            lng = c.get('lng')
+            if lat is None or lng is None:
+                continue
+            ring.append([float(lng), float(lat)])
+
+        if len(ring) < 3:
+            continue
+        if ring[0] != ring[-1]:
+            ring.append(ring[0])
+
+        features.append({
+            "type": "Feature",
+            "id": airspace.get('id', f"airspace-{idx}"),
+            "geometry": {"type": "Polygon", "coordinates": [ring]},
+            "properties": {
+                "name": airspace.get('name', 'Unknown'),
+                "type": airspace.get('type', 'Unknown'),
+                "class": airspace.get('type', 'Unknown'),
+                "country": airspace.get('country', 'EU'),
+                "floor": airspace.get('floor'),
+                "ceiling": airspace.get('ceiling')
+            }
+        })
+
+    return {"type": "FeatureCollection", "features": features}
 def get_airspace_requirements(airspace_type: str) -> List[str]:
     """Get special requirements for airspace types"""
     requirements = {
@@ -736,133 +770,6 @@ def compute_flight_score(wind_speed: float, visibility_km: float, weather_code: 
     if score >= 45:
         return score, "caution"
     return score, "not_recommended"
-
-
-AEMET_API_KEY = os.getenv("AEMET_API_KEY")
-AEMET_BASE_URL = "https://opendata.aemet.es/opendata/api"
-_AEMET_STATIONS_CACHE: Dict[str, Any] = {"stations": None, "expires_at": None}
-
-
-def to_float(value: Any, default: float) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def parse_aemet_coordinate(value: str, is_latitude: bool) -> Optional[float]:
-    """Parse AEMET compact DMS format (e.g., 412342N, 0021034W)."""
-    if not value:
-        return None
-
-    text = value.strip().upper()
-    match = re.match(r"^(\d+)([NSEW])$", text)
-    if not match:
-        return None
-
-    raw_digits, hemisphere = match.groups()
-    expected_length = 6 if is_latitude else 7
-    if len(raw_digits) != expected_length:
-        return None
-
-    deg_len = 2 if is_latitude else 3
-    degrees = int(raw_digits[:deg_len])
-    minutes = int(raw_digits[deg_len:deg_len + 2])
-    seconds = int(raw_digits[deg_len + 2:deg_len + 4])
-
-    decimal = degrees + (minutes / 60.0) + (seconds / 3600.0)
-    if hemisphere in {"S", "W"}:
-        decimal *= -1
-
-    return decimal
-
-
-async def fetch_aemet_dataset(path: str, client: httpx.AsyncClient) -> Any:
-    """AEMET API uses a two-step retrieval: metadata URL then dataset URL."""
-    if not AEMET_API_KEY:
-        raise ValueError("AEMET_API_KEY is not configured")
-
-    params = urlencode({"api_key": AEMET_API_KEY})
-    metadata_url = f"{AEMET_BASE_URL}{path}?{params}"
-    metadata_response = await client.get(metadata_url)
-    metadata_response.raise_for_status()
-    metadata = metadata_response.json()
-
-    data_url = metadata.get("datos")
-    if not data_url:
-        raise ValueError("AEMET response does not include a data URL")
-
-    dataset_response = await client.get(data_url)
-    dataset_response.raise_for_status()
-    return dataset_response.json()
-
-
-async def get_aemet_stations(client: httpx.AsyncClient) -> List[Dict[str, Any]]:
-    """Get and cache AEMET stations for 6 hours."""
-    now = datetime.now(timezone.utc)
-    cached_stations = _AEMET_STATIONS_CACHE.get("stations")
-    expires_at = _AEMET_STATIONS_CACHE.get("expires_at")
-
-    if cached_stations and expires_at and now < expires_at:
-        return cached_stations
-
-    stations_raw = await fetch_aemet_dataset("/valores/climatologicos/inventarioestaciones/todasestaciones", client)
-    stations: List[Dict[str, Any]] = []
-
-    for station in stations_raw:
-        station_lat = parse_aemet_coordinate(station.get("latitud"), is_latitude=True)
-        station_lng = parse_aemet_coordinate(station.get("longitud"), is_latitude=False)
-        if station_lat is None or station_lng is None:
-            continue
-        stations.append({
-            "indicativo": station.get("indicativo"),
-            "nombre": station.get("nombre", "Estación AEMET"),
-            "lat": station_lat,
-            "lng": station_lng,
-        })
-
-    _AEMET_STATIONS_CACHE["stations"] = stations
-    _AEMET_STATIONS_CACHE["expires_at"] = now.replace(microsecond=0) + timedelta(hours=6)
-    return stations
-
-
-def parse_aemet_weather_description(observation: Dict[str, Any]) -> str:
-    if observation.get("prec") not in (None, "Ip", ""):  # "Ip" = inappreciable precipitation
-        return "Rain observed"
-
-    humidity = observation.get("hr")
-    try:
-        if humidity is not None and float(humidity) > 90:
-            return "High humidity"
-    except (TypeError, ValueError):
-        pass
-
-    return "Stable conditions"
-
-
-def parse_aemet_observation(observation: Dict[str, Any], lat: float, lng: float) -> FlightCondition:
-    temperature_c = to_float(observation.get("ta"), 20.0)
-    wind_speed = to_float(observation.get("v"), 0.0)
-    wind_direction = to_float(observation.get("dv"), 0.0)
-    visibility_km = to_float(observation.get("vis"), 10000.0) / 1000.0
-
-    weather_code = 63 if observation.get("prec") not in (None, "Ip", "") else 1
-    score, recommendation = compute_flight_score(wind_speed, visibility_km, weather_code)
-    runway_heading = (wind_direction + 180) % 360
-
-    return FlightCondition(
-        lat=lat,
-        lng=lng,
-        temperature_c=temperature_c,
-        weather_description=parse_aemet_weather_description(observation),
-        wind_speed_ms=wind_speed,
-        wind_direction_deg=wind_direction,
-        visibility_km=visibility_km,
-        flight_score=score,
-        recommendation=recommendation,
-        takeoff_heading_deg=runway_heading,
-        landing_heading_deg=runway_heading,
-    )
 
 
 # Ultra-Detailed Spanish Airspace Data + European Coverage
@@ -1759,6 +1666,30 @@ async def get_airspaces(type_filter: Optional[str] = None, country: Optional[str
         logger.error(f"Error getting airspaces: {e}")
         raise HTTPException(status_code=500, detail="Failed to get airspace data")
 
+
+@api_router.get("/airspaces/geojson")
+async def get_airspaces_geojson(type_filter: Optional[str] = None, country: Optional[str] = None):
+    """Return airspaces as GeoJSON FeatureCollection for map layers."""
+    parsed_airspaces = parse_openair_airspace(EUROPEAN_AIRSPACE_DATA)
+    filtered = []
+    for airspace in parsed_airspaces:
+        if type_filter and airspace.get('type') != type_filter:
+            continue
+        if country and airspace.get('country') != country:
+            continue
+        filtered.append(airspace)
+
+    return airspaces_to_geojson(filtered)
+
+
+@api_router.get("/notams")
+async def get_notams_geojson():
+    """Return active NOTAM areas as GeoJSON. Placeholder empty collection if no provider configured."""
+    return {
+        "type": "FeatureCollection",
+        "features": []
+    }
+
 @api_router.get("/countries")
 async def get_countries():
     """Get available countries with airspace data"""
@@ -1871,7 +1802,18 @@ async def create_route(route_data: RouteCreate):
 @api_router.get("/conditions", response_model=FlightCondition)
 async def get_flight_conditions(lat: float, lng: float):
     """Get current weather/wind/visibility and flight recommendation for a location."""
+    weather_code = 0
+    temperature_c = 20.0
+    wind_speed = 4.0
+    wind_direction = 0.0
+    visibility_km = 10.0
+
     try:
+        weather_url = (
+            "https://api.open-meteo.com/v1/forecast"
+            f"?latitude={lat}&longitude={lng}"
+            "&current=temperature_2m,weather_code,wind_speed_10m,wind_direction_10m,visibility"
+        )
         async with httpx.AsyncClient(timeout=10) as client:
             # Primary source: AEMET observations from nearest station
             if AEMET_API_KEY:
@@ -1918,30 +1860,13 @@ async def get_flight_conditions(lat: float, lng: float):
             response.raise_for_status()
             payload = response.json()
 
-            current = payload.get("current", {})
-            temperature_c = float(current.get("temperature_2m", 20.0))
-            weather_code = int(current.get("weather_code", 0))
-            wind_speed = float(current.get("wind_speed_10m", 0.0))
-            wind_direction = float(current.get("wind_direction_10m", 0.0))
-            visibility_m = float(current.get("visibility", 10000.0))
-            visibility_km = visibility_m / 1000.0
-
-            score, recommendation = compute_flight_score(wind_speed, visibility_km, weather_code)
-            runway_heading = (wind_direction + 180) % 360
-
-            return FlightCondition(
-                lat=lat,
-                lng=lng,
-                temperature_c=temperature_c,
-                weather_description=weather_code_to_text(weather_code),
-                wind_speed_ms=wind_speed,
-                wind_direction_deg=wind_direction,
-                visibility_km=visibility_km,
-                flight_score=score,
-                recommendation=recommendation,
-                takeoff_heading_deg=runway_heading,
-                landing_heading_deg=runway_heading,
-            )
+        current = payload.get("current", {})
+        temperature_c = float(current.get("temperature_2m", temperature_c))
+        weather_code = int(current.get("weather_code", weather_code))
+        wind_speed = float(current.get("wind_speed_10m", wind_speed))
+        wind_direction = float(current.get("wind_direction_10m", wind_direction))
+        visibility_m = float(current.get("visibility", visibility_km * 1000.0))
+        visibility_km = visibility_m / 1000.0
     except Exception as e:
         logger.error(f"Error getting flight conditions: {e}")
         raise HTTPException(status_code=500, detail="Failed to get flight conditions")

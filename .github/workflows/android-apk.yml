@@ -3,9 +3,12 @@ name: Build Android APK
 on:
   workflow_dispatch:
   push:
+    branches:
+      - main
+      - work
+      - 'codex/**'
     tags:
       - 'v*'
-      - 'version*'
 
 jobs:
   build-apk:

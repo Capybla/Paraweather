@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { MapContainer, TileLayer, Polygon, Marker, Popup, Polyline, useMapEvents, useMap } from 'react-leaflet';
+import { Marker, Popup, Polyline, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import axios from 'axios';
 import './App.css';
 import { UI_DEFAULT_PAGES, UI_DEFAULT_WIDGETS, STORAGE_KEYS, WEATHER_CACHE_TTL_MS } from './config';
+import MapboxFlightMap from './components/MapboxFlightMap';
 
 // Fix for default markers in react-leaflet
 delete L.Icon.Default.prototype._getIconUrl;
@@ -57,6 +58,32 @@ const speakDirection = (text) => {
 };
 
 // Custom icons for different airspace types
+const normalizeAirspaceCoordinates = (coordinates = []) => {
+  if (!Array.isArray(coordinates)) return [];
+
+  const normalized = coordinates
+    .map((coord) => {
+      const lat = Number(coord?.lat);
+      const lng = Number(coord?.lng);
+      if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        if (Math.abs(lat) <= 90 && Math.abs(lng) <= 180) return [lat, lng];
+        if (Math.abs(lng) <= 90 && Math.abs(lat) <= 180) return [lng, lat];
+      }
+      return null;
+    })
+    .filter(Boolean);
+
+  if (normalized.length > 2) {
+    const [firstLat, firstLng] = normalized[0];
+    const [lastLat, lastLng] = normalized[normalized.length - 1];
+    if (firstLat !== lastLat || firstLng !== lastLng) {
+      normalized.push([firstLat, firstLng]);
+    }
+  }
+
+  return normalized;
+};
+
 const getAirspaceColor = (type) => {
   const colors = {
     'R': '#ff4444', // Restricted - Red
@@ -241,7 +268,6 @@ const AirspacePreferences = ({ preferences, onPreferencesChange, isOpen, onToggl
 
 // GPS Position Tracker Component
 const GPSTracker = ({ onPositionUpdate, onSensorStatus, onMotionUpdate }) => {
-  const [watchId, setWatchId] = useState(null);
   const [sensorStatus, setSensorStatus] = useState({
     gps: 'checking',
     barometer: 'checking',
@@ -665,18 +691,77 @@ const SensorWarnings = ({ sensorStatus }) => {
 
 
 
-const FlightConditionsPanel = ({ conditions, sensorStatus, motionData }) => {
-  if (!conditions) return null;
 
-  const recommendationLabel = {
-    recommended: '✅ Recomendado volar',
-    caution: '⚠️ Volar con precaución',
-    not_recommended: '⛔ No recomendado volar'
+const NetworkStatusBanner = ({ isOnline, weatherFromCache, weatherUpdatedAt }) => {
+  if (isOnline) return null;
+  return (
+    <div className="network-alert">
+      <strong>⚠️ Sin conexión de red.</strong> Modo offline activo con GPS y datos guardados.
+      {weatherFromCache && weatherUpdatedAt && (
+        <span> Último parte meteo: {new Date(weatherUpdatedAt).toLocaleTimeString()}.</span>
+      )}
+    </div>
+  );
+};
+
+const recommendationLabel = {
+  recommended: '✅ Recomendado volar',
+  caution: '⚠️ Volar con precaución',
+  not_recommended: '⛔ No recomendado volar'
+};
+
+const DraggableWidget = ({ id, title, children, config, onUpdate }) => {
+  const [dragging, setDragging] = useState(false);
+  const dragRef = useRef({ offsetX: 0, offsetY: 0 });
+
+  useEffect(() => {
+    const handleMove = (event) => {
+      if (!dragging) return;
+      onUpdate(id, {
+        x: Math.max(0, event.clientX - dragRef.current.offsetX),
+        y: Math.max(70, event.clientY - dragRef.current.offsetY)
+      });
+    };
+
+    const handleUp = () => setDragging(false);
+
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleUp);
+    };
+  }, [dragging, id, onUpdate]);
+
+  const startDrag = (event) => {
+    setDragging(true);
+    dragRef.current = {
+      offsetX: event.clientX - config.x,
+      offsetY: event.clientY - config.y
+    };
   };
 
   return (
-    <div className="flight-conditions-panel">
-      <h3>🌤️ Condiciones de vuelo</h3>
+    <div
+      className={`widget-card ${dragging ? 'dragging' : ''}`}
+      style={{ left: config.x, top: config.y, width: config.width, height: config.height }}
+    >
+      <div className="widget-header" onMouseDown={startDrag}>
+        <h3>{title}</h3>
+        <span className="widget-hint">Arrastra + redimensiona ↘</span>
+      </div>
+      <div className="widget-body">{children}</div>
+    </div>
+  );
+};
+
+const WeatherWidget = ({ conditions, sensorStatus, motionData }) => {
+  if (!conditions) {
+    return <p>Cargando condiciones meteorológicas...</p>;
+  }
+
+  return (
+    <div className="widget-content-list">
       <p><strong>Tiempo:</strong> {conditions.weather_description} · {conditions.temperature_c.toFixed(1)}°C</p>
       <p><strong>Viento:</strong> {conditions.wind_speed_ms.toFixed(1)} m/s ({Math.round(conditions.wind_direction_deg)}°)</p>
       <p><strong>Visibilidad:</strong> {conditions.visibility_km.toFixed(1)} km</p>
@@ -1284,6 +1369,8 @@ const App = () => {
     setSensorStatus(status);
   };
 
+  const motionUpdateRaf = useRef(null);
+
   const handleMotionUpdate = (data) => {
     setMotionData(prev => ({ ...prev, ...data }));
   const motionUpdateRaf = useRef(null);
@@ -1335,6 +1422,20 @@ const App = () => {
           params: { lat: currentPosition.lat, lng: currentPosition.lng }
         });
         setFlightConditions(response.data);
+        const minimizedData = {
+          weather_description: response.data.weather_description,
+          temperature_c: response.data.temperature_c,
+          wind_speed_ms: response.data.wind_speed_ms,
+          wind_direction_deg: response.data.wind_direction_deg,
+          visibility_km: response.data.visibility_km,
+          flight_score: response.data.flight_score,
+          recommendation: response.data.recommendation,
+          takeoff_heading_deg: response.data.takeoff_heading_deg,
+          landing_heading_deg: response.data.landing_heading_deg,
+        };
+        const snapshot = { data: minimizedData, updatedAt: Date.now() };
+        setLastWeatherSnapshot(snapshot);
+        localStorage.setItem(STORAGE_KEYS.lastWeatherSnapshot, JSON.stringify(snapshot));
       } catch (error) {
         console.error('Error loading flight conditions:', error);
         const minimizedData = {
@@ -1376,6 +1477,14 @@ const App = () => {
     selectedAirspaceTypes.length === 0 || selectedAirspaceTypes.includes(airspace.type)
   );
 
+  const normalizedAirspaces = filteredAirspaces
+    .map((airspace, index) => ({
+      ...airspace,
+      normalizedCoordinates: normalizeAirspaceCoordinates(airspace.coordinates),
+      _renderKey: airspace.id || `${airspace.country || 'XX'}-${airspace.type || 'U'}-${airspace.name || 'airspace'}-${index}`
+    }))
+    .filter((airspace) => airspace.normalizedCoordinates.length >= 4);
+
   if (loading) {
     return (
       <div className="loading-screen">
@@ -1402,6 +1511,26 @@ const App = () => {
           <button
             className="controls-menu-button"
             onClick={() => setControlsMenuOpen(!controlsMenuOpen)}
+            aria-label="Abrir o cerrar menú"
+          >
+            ☰ Menú
+          </button>
+          <button
+            onClick={() => { setShowSidebar(!showSidebar); setControlsMenuOpen(false); }}
+            className="quick-sidebar-toggle"
+            aria-label={showSidebar ? 'Ocultar panel lateral' : 'Mostrar panel lateral'}
+          >
+            {showSidebar ? '🟠 Ocultar panel' : '🟢 Mostrar panel'}
+          </button>
+          {controlsMenuOpen && (
+            <div className="controls-dropdown">
+              <div className="controls-dropdown-header">
+                <span>Acciones rápidas</span>
+                <button className="controls-close-btn" onClick={() => setControlsMenuOpen(false)}>✕</button>
+              </div>
+              {selectedRoute && !navigationMode && (
+                <button
+                  onClick={() => { handleStartNavigation(); setControlsMenuOpen(false); }}
           >
             ☰ Menú
           </button>
@@ -1418,6 +1547,7 @@ const App = () => {
               )}
               {navigationMode && (
                 <button
+                  onClick={() => { handleEndNavigation(); setControlsMenuOpen(false); }}
                   onClick={handleEndNavigation}
                   className="navigation-btn active"
                 >
@@ -1425,6 +1555,15 @@ const App = () => {
                 </button>
               )}
               <button
+                onClick={() => { setShowSidebar(!showSidebar); setControlsMenuOpen(false); }}
+                className="sidebar-toggle prominent"
+              >
+                {showSidebar ? 'Ocultar panel lateral' : 'Mostrar panel lateral'}
+              </button>
+              <button className="add-page-btn" onClick={() => { addPage(); setControlsMenuOpen(false); }}>+ Añadir página</button>
+              {!navigationMode && (
+                <button
+                  onClick={() => { setIsPlanning(!isPlanning); setControlsMenuOpen(false); }}
                 onClick={() => setShowSidebar(!showSidebar)}
                 className="sidebar-toggle"
               >
@@ -1507,6 +1646,16 @@ const App = () => {
                 {navigationMode && selectedRoute && (
                   <NavigationMode route={selectedRoute} currentPosition={currentPosition} onNavigationEnd={handleEndNavigation} />
                 )}
+                <GPSTracker onPositionUpdate={handlePositionUpdate} onSensorStatus={handleSensorStatus} onMotionUpdate={handleMotionUpdate} />
+                <MapboxFlightMap
+                  currentPosition={currentPosition}
+                  defaultCenter={{ lat: mapCenter[0], lng: mapCenter[1] }}
+                  airspaces={filteredAirspaces}
+                  airspaceGeoJsonUrl={`${API}/airspaces/geojson`}
+                  notamGeoJsonUrl={`${API}/notams`}
+                  routeColor="#1976d2"
+                  routeWidth={4}
+                />
                 <MapContainer center={mapCenter} zoom={navigationMode ? 15 : 5} className="leaflet-map">
                   <TileLayer
                     url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -1559,6 +1708,11 @@ const App = () => {
             </DraggableWidget>
           )}
 
+          {visibleOnPage('weather') && (
+            <DraggableWidget id="weather" title="🌤️ Tiempo y recomendación" config={widgetConfig.weather} onUpdate={updateWidgetConfig}>
+              <WeatherWidget conditions={flightConditions} sensorStatus={sensorStatus} motionData={motionData} />
+            </DraggableWidget>
+          )}
           <MapContainer 
             center={mapCenter} 
             zoom={navigationMode ? 15 : 5} 
